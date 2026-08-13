@@ -640,6 +640,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      next_partner_code: { Args: never; Returns: string }
     }
     Enums: {
       app_role: "admin" | "partner" | "customer" | "staff"
