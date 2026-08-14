@@ -14,6 +14,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as BusinessPartnerRouteImport } from './routes/business-partner'
 import { Route as CartRouteImport } from './routes/cart'
 import { Route as CheckoutRouteImport } from './routes/checkout'
+import { Route as JoinRouteImport } from './routes/join'
 import { Route as ShopRouteImport } from './routes/shop'
 import { Route as ProductSlugRouteImport } from './routes/product.$slug'
 
@@ -42,6 +43,11 @@ const CheckoutRoute = CheckoutRouteImport.update({
   path: '/checkout',
   getParentRoute: () => rootRouteImport,
 } as any)
+const JoinRoute = JoinRouteImport.update({
+  id: '/join',
+  path: '/join',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ShopRoute = ShopRouteImport.update({
   id: '/shop',
   path: '/shop',
@@ -59,6 +65,7 @@ export interface FileRoutesByFullPath {
   '/business-partner': typeof BusinessPartnerRoute
   '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRoute
+  '/join': typeof JoinRoute
   '/shop': typeof ShopRoute
   '/product/$slug': typeof ProductSlugRoute
 }
@@ -68,6 +75,7 @@ export interface FileRoutesByTo {
   '/business-partner': typeof BusinessPartnerRoute
   '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRoute
+  '/join': typeof JoinRoute
   '/shop': typeof ShopRoute
   '/product/$slug': typeof ProductSlugRoute
 }
@@ -78,6 +86,7 @@ export interface FileRoutesById {
   '/business-partner': typeof BusinessPartnerRoute
   '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRoute
+  '/join': typeof JoinRoute
   '/shop': typeof ShopRoute
   '/product/$slug': typeof ProductSlugRoute
 }
@@ -89,6 +98,7 @@ export interface FileRouteTypes {
     | '/business-partner'
     | '/cart'
     | '/checkout'
+    | '/join'
     | '/shop'
     | '/product/$slug'
   fileRoutesByTo: FileRoutesByTo
@@ -98,6 +108,7 @@ export interface FileRouteTypes {
     | '/business-partner'
     | '/cart'
     | '/checkout'
+    | '/join'
     | '/shop'
     | '/product/$slug'
   id:
@@ -107,6 +118,7 @@ export interface FileRouteTypes {
     | '/business-partner'
     | '/cart'
     | '/checkout'
+    | '/join'
     | '/shop'
     | '/product/$slug'
   fileRoutesById: FileRoutesById
@@ -117,6 +129,7 @@ export interface RootRouteChildren {
   BusinessPartnerRoute: typeof BusinessPartnerRoute
   CartRoute: typeof CartRoute
   CheckoutRoute: typeof CheckoutRoute
+  JoinRoute: typeof JoinRoute
   ShopRoute: typeof ShopRoute
   ProductSlugRoute: typeof ProductSlugRoute
 }
@@ -158,6 +171,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CheckoutRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/join': {
+      id: '/join'
+      path: '/join'
+      fullPath: '/join'
+      preLoaderRoute: typeof JoinRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/shop': {
       id: '/shop'
       path: '/shop'
@@ -181,6 +201,7 @@ const rootRouteChildren: RootRouteChildren = {
   BusinessPartnerRoute: BusinessPartnerRoute,
   CartRoute: CartRoute,
   CheckoutRoute: CheckoutRoute,
+  JoinRoute: JoinRoute,
   ShopRoute: ShopRoute,
   ProductSlugRoute: ProductSlugRoute,
 }
