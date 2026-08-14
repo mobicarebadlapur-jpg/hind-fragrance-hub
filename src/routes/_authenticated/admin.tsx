@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { downloadCsv, inr, shortDate } from "@/lib/format";
-import { useSession } from "@/lib/session";
+import { useIsAdmin, useSession } from "@/lib/session";
 import {
   setCustomerBlocked,
   updateCommissionStatus,
@@ -73,7 +73,8 @@ const PAYOUT_STATUSES = [
 ] as const;
 
 function AdminConsole() {
-  const { data: session, isPending } = useSession();
+  const { isPending } = useSession();
+  const isAdmin = useIsAdmin();
   const queryClient = useQueryClient();
   const saveSetting = useServerFn(updateSetting);
   const setPartner = useServerFn(updatePartnerStatus);
@@ -84,7 +85,7 @@ function AdminConsole() {
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-data"],
-    enabled: Boolean(session?.isAdmin),
+    enabled: Boolean(isAdmin),
     queryFn: async () => {
       const [partners, orders, commissions, payouts, customers, settings, products] =
         await Promise.all([
@@ -165,7 +166,7 @@ function AdminConsole() {
     );
   }
 
-  if (!session?.isAdmin) {
+  if (!isAdmin) {
     return (
       <DashboardShell title="Admin console">
         <EmptyState message="You do not have access to the admin console." />
@@ -246,7 +247,7 @@ function AdminConsole() {
             <Row
               key={o.id}
               title={`${o.order_number} · ${inr(o.total)}`}
-              meta={`${o.customer_name ?? ""} · ${shortDate(o.created_at)}`}
+              meta={`${o.shipping_name ?? ""} · ${shortDate(o.created_at)}`}
               status={o.status}
               options={ORDER_STATUSES}
               onChange={(status) =>
