@@ -241,7 +241,7 @@ function PartnerDashboard() {
               headers={["Order", "Base", "Rate", "Commission", "Status", "Date"]}
               rows={commissions.map((c) => [
                 c.orders?.order_number ?? "—",
-                inr(c.base_amount),
+                inr(c.order_amount),
                 `${c.percent}%`,
                 inr(c.amount),
                 <StatusPill key={c.id} status={c.status} />,
@@ -376,12 +376,12 @@ function PartnerDashboard() {
               {(stats?.assets ?? []).map((asset) => (
                 <a
                   key={asset.id}
-                  href={asset.file_url}
+                  href={asset.file_url ?? asset.image_url ?? "#"}
                   target="_blank"
                   rel="noreferrer"
                   className="rounded-xl border border-border bg-card p-5 transition-colors hover:border-gold"
                 >
-                  <span className="eyebrow">{asset.asset_type}</span>
+                  <span className="eyebrow">{asset.category}</span>
                   <h3 className="mt-2 font-display text-xl">{asset.title}</h3>
                   <p className="mt-1 text-xs text-muted-foreground">Open / download</p>
                 </a>
