@@ -247,7 +247,7 @@ function AdminConsole() {
             <Row
               key={o.id}
               title={`${o.order_number} · ${inr(o.total)}`}
-              meta={`${o.shipping_name ?? ""} · ${shortDate(o.created_at)}`}
+              meta={`${o.referral_code ? `Ref ${o.referral_code} · ` : ""}${shortDate(o.created_at)}`}
               status={o.status}
               options={ORDER_STATUSES}
               onChange={(status) =>
