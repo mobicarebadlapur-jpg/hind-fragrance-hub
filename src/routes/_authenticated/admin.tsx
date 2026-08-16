@@ -100,7 +100,9 @@ function AdminConsole() {
             .order("created_at", { ascending: false }),
           supabase
             .from("payouts")
-            .select("*, partners(partner_code)")
+            .select(
+              "id,partner_id,amount,method,account_holder,bank_name,status,notes,created_at,updated_at,account_number_last4,upi_id_masked,ifsc_masked, partners(partner_code)",
+            )
             .order("created_at", { ascending: false }),
           supabase.from("profiles").select("*").order("created_at", { ascending: false }).limit(200),
           supabase.from("app_settings").select("*"),
