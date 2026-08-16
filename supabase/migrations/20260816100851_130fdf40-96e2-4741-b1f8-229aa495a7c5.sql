@@ -1,0 +1,10 @@
+REVOKE ALL ON FUNCTION public.validate_payout_request() FROM public, anon, authenticated;
+REVOKE ALL ON FUNCTION public.guard_payout_update() FROM public, anon, authenticated;
+REVOKE ALL ON FUNCTION public.validate_referral_click() FROM public, anon, authenticated;
+REVOKE ALL ON FUNCTION public.validate_order_attribution() FROM public, anon, authenticated;
+REVOKE ALL ON FUNCTION public.handle_order_commission() FROM public, anon, authenticated;
+REVOKE ALL ON FUNCTION public.next_partner_code() FROM public, anon, authenticated;
+REVOKE ALL ON FUNCTION public.get_available_commission(uuid) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.get_available_commission(uuid) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.get_payout_bank_details(uuid) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.get_payout_bank_details(uuid) TO authenticated, service_role;
