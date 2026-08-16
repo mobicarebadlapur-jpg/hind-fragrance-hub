@@ -81,7 +81,9 @@ export const requestPayout = createServerFn({ method: "POST" })
     if (data.method === "upi" && !data.upiId)
       return { ok: false as const, error: "Please provide a valid UPI ID." };
 
-    await db.from("payouts").insert({
+    // The database re-validates eligibility, clamps the amount to the live
+    // balance and forces the initial status — the browser value is never trusted.
+    const { error } = await db.from("payouts").insert({
       partner_id: partner.id,
       amount: data.amount,
       method: data.method,
@@ -92,6 +94,7 @@ export const requestPayout = createServerFn({ method: "POST" })
       upi_id: data.upiId ?? null,
       status: "requested",
     });
+    if (error) return { ok: false as const, error: error.message };
     await notify(
       context.userId,
       "Payout requested",

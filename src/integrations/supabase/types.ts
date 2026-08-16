@@ -371,47 +371,56 @@ export type Database = {
         Row: {
           account_holder: string | null
           account_number: string | null
+          account_number_last4: string | null
           amount: number
           bank_name: string | null
           created_at: string
           id: string
           ifsc: string | null
+          ifsc_masked: string | null
           method: string
           notes: string | null
           partner_id: string
           status: Database["public"]["Enums"]["payout_status"]
           updated_at: string
           upi_id: string | null
+          upi_id_masked: string | null
         }
         Insert: {
           account_holder?: string | null
           account_number?: string | null
+          account_number_last4?: string | null
           amount: number
           bank_name?: string | null
           created_at?: string
           id?: string
           ifsc?: string | null
+          ifsc_masked?: string | null
           method: string
           notes?: string | null
           partner_id: string
           status?: Database["public"]["Enums"]["payout_status"]
           updated_at?: string
           upi_id?: string | null
+          upi_id_masked?: string | null
         }
         Update: {
           account_holder?: string | null
           account_number?: string | null
+          account_number_last4?: string | null
           amount?: number
           bank_name?: string | null
           created_at?: string
           id?: string
           ifsc?: string | null
+          ifsc_masked?: string | null
           method?: string
           notes?: string | null
           partner_id?: string
           status?: Database["public"]["Enums"]["payout_status"]
           updated_at?: string
           upi_id?: string | null
+          upi_id_masked?: string | null
         }
         Relationships: [
           {
@@ -633,6 +642,20 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_available_commission: {
+        Args: { _partner_id: string }
+        Returns: number
+      }
+      get_payout_bank_details: {
+        Args: { _payout_id: string }
+        Returns: {
+          account_holder: string
+          account_number: string
+          bank_name: string
+          ifsc: string
+          upi_id: string
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

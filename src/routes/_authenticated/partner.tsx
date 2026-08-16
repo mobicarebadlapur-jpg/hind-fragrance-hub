@@ -71,7 +71,9 @@ function PartnerDashboard() {
           .order("created_at", { ascending: false }),
         supabase
           .from("payouts")
-          .select("*")
+          .select(
+            "id,partner_id,amount,method,account_holder,bank_name,status,notes,created_at,updated_at,account_number_last4,upi_id_masked,ifsc_masked",
+          )
           .eq("partner_id", partner!.id)
           .order("created_at", { ascending: false }),
         supabase.from("marketing_assets").select("*").eq("status", "active"),
