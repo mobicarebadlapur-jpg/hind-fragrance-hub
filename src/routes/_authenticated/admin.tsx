@@ -594,7 +594,7 @@ function ProductDialog({
       slug: f.slug.trim(),
       sku: f.sku.trim(),
       category: f.category.trim(),
-      short_description: f.short_description.trim() || undefined,
+      ...(f.short_description.trim() ? { short_description: f.short_description.trim() } : {}),
       image_url: f.image_url.trim() || null,
       price: Number(f.price),
       sale_price: f.sale_price ? Number(f.sale_price) : null,
