@@ -62,7 +62,13 @@ const ORDER_STATUSES = [
   "refunded",
   "returned",
 ] as const;
-const PARTNER_STATUSES = ["pending", "payment_pending", "active", "suspended", "cancelled"] as const;
+const PARTNER_STATUSES = [
+  "pending",
+  "payment_pending",
+  "active",
+  "suspended",
+  "cancelled",
+] as const;
 const COMMISSION_STATUSES = [
   "pending",
   "approved",
@@ -113,7 +119,11 @@ function AdminConsole() {
               "id,partner_id,amount,method,account_holder,bank_name,status,notes,created_at,updated_at,account_number_last4,upi_id_masked,ifsc_masked, partners(partner_code)",
             )
             .order("created_at", { ascending: false }),
-          supabase.from("profiles").select("*").order("created_at", { ascending: false }).limit(200),
+          supabase
+            .from("profiles")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(200),
           supabase.from("app_settings").select("*"),
           supabase.from("products").select("*").order("created_at", { ascending: false }),
           supabase
@@ -136,11 +146,9 @@ function AdminConsole() {
   });
 
   const commissionSetting = data?.settings.find((s) => s.key === "commission")?.value as
-    | Record<string, unknown>
-    | undefined;
+    Record<string, unknown> | undefined;
   const membershipSetting = data?.settings.find((s) => s.key === "membership")?.value as
-    | Record<string, unknown>
-    | undefined;
+    Record<string, unknown> | undefined;
 
   const [form, setForm] = useState({
     default_percent: "10",
@@ -575,7 +583,8 @@ function ProductDialog({
       product?.commission_percent != null ? String(product.commission_percent) : "",
   });
 
-  const set = (key: keyof typeof f, value: string | boolean) => setF((p) => ({ ...p, [key]: value }));
+  const set = (key: keyof typeof f, value: string | boolean) =>
+    setF((p) => ({ ...p, [key]: value }));
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

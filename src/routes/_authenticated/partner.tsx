@@ -29,7 +29,8 @@ export const Route = createFileRoute("/_authenticated/partner")({
       { title: "Partner Dashboard — Hind Fragrance" },
       {
         name: "description",
-        content: "Track referral clicks, orders, commission and payouts as a Hind Fragrance partner.",
+        content:
+          "Track referral clicks, orders, commission and payouts as a Hind Fragrance partner.",
       },
       { property: "og:title", content: "Partner Dashboard — Hind Fragrance" },
       { property: "og:description", content: "Your referral performance at a glance." },
@@ -128,7 +129,11 @@ function PartnerDashboard() {
   }, [shareLink]);
 
   if (isPending) {
-    return <DashboardShell title="Partner dashboard"><p className="text-sm text-muted-foreground">Loading…</p></DashboardShell>;
+    return (
+      <DashboardShell title="Partner dashboard">
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      </DashboardShell>
+    );
   }
 
   if (!partner || partner.status !== "active") {
@@ -178,7 +183,12 @@ function PartnerDashboard() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Referral clicks" value={stats?.clicks ?? 0} />
         <StatCard label="Referred orders" value={stats?.orders.length ?? 0} />
-        <StatCard label="Total commission" value={earned} currency hint={`${inr(pending)} pending`} />
+        <StatCard
+          label="Total commission"
+          value={earned}
+          currency
+          hint={`${inr(pending)} pending`}
+        />
         <StatCard
           label="Available to withdraw"
           value={balance?.available ?? 0}
@@ -362,7 +372,9 @@ function PartnerDashboard() {
               <Input
                 inputMode="decimal"
                 value={payout.amount}
-                onChange={(e) => setPayout({ ...payout, amount: e.target.value.replace(/[^\d.]/g, "") })}
+                onChange={(e) =>
+                  setPayout({ ...payout, amount: e.target.value.replace(/[^\d.]/g, "") })
+                }
                 required
               />
             </div>
