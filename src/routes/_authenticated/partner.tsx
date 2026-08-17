@@ -1,9 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Copy, Download } from "lucide-react";
+import QRCode from "qrcode";
 import { DashboardShell, EmptyState, StatCard, StatusPill } from "@/components/dash/DashboardShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,11 +51,11 @@ function PartnerDashboard() {
     queryFn: () => balanceFn({}),
   });
 
-  const { data: stats } = useQuery({
+  const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["partner-stats", partner?.id],
     enabled: Boolean(partner),
     queryFn: async () => {
-      const [clicks, orders, commissions, payouts, assets] = await Promise.all([
+      const [clicks, orders, commissions, payouts, assets, products] = await Promise.all([
         supabase
           .from("referral_clicks")
           .select("id", { count: "exact", head: true })
@@ -77,6 +78,11 @@ function PartnerDashboard() {
           .eq("partner_id", partner!.id)
           .order("created_at", { ascending: false }),
         supabase.from("marketing_assets").select("*").eq("status", "active"),
+        supabase
+          .from("products")
+          .select("id,name,slug")
+          .eq("status", "active")
+          .order("name", { ascending: true }),
       ]);
       return {
         clicks: clicks.count ?? 0,
@@ -84,6 +90,7 @@ function PartnerDashboard() {
         commissions: commissions.data ?? [],
         payouts: payouts.data ?? [],
         assets: assets.data ?? [],
+        products: products.data ?? [],
       };
     },
   });
@@ -98,6 +105,27 @@ function PartnerDashboard() {
     upiId: "",
   });
   const [busy, setBusy] = useState(false);
+  const [productSlug, setProductSlug] = useState("__store");
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+
+  const shareLink = useMemo(() => {
+    if (!partner) return "";
+    return referralUrl(
+      partner.referral_code,
+      productSlug === "__store" ? "/" : `/product/${productSlug}`,
+    );
+  }, [partner, productSlug]);
+
+  useEffect(() => {
+    if (!shareLink) return;
+    let active = true;
+    void QRCode.toDataURL(shareLink, { width: 320, margin: 1 }).then((url) => {
+      if (active) setQrDataUrl(url);
+    });
+    return () => {
+      active = false;
+    };
+  }, [shareLink]);
 
   if (isPending) {
     return <DashboardShell title="Partner dashboard"><p className="text-sm text-muted-foreground">Loading…</p></DashboardShell>;
@@ -172,12 +200,14 @@ function PartnerDashboard() {
           <div className="rounded-xl border border-border bg-card p-6">
             <p className="eyebrow">Your referral link</p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <code className="flex-1 truncate rounded-md bg-secondary px-3 py-2 text-xs">{link}</code>
+              <code className="min-w-0 flex-1 truncate rounded-md bg-secondary px-3 py-2 text-xs">
+                {shareLink}
+              </code>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  void navigator.clipboard.writeText(link);
+                  void navigator.clipboard.writeText(shareLink);
                   toast.success("Copied");
                 }}
               >
@@ -185,7 +215,7 @@ function PartnerDashboard() {
               </Button>
               <Button variant="outline" size="sm" asChild>
                 <a
-                  href={`https://wa.me/?text=${encodeURIComponent(`Shop alcohol-free attars from Hind Fragrance: ${link}`)}`}
+                  href={`https://wa.me/?text=${encodeURIComponent(`Shop alcohol-free attars from Hind Fragrance: ${shareLink}`)}`}
                   target="_blank"
                   rel="noreferrer"
                 >
@@ -193,14 +223,54 @@ function PartnerDashboard() {
                 </a>
               </Button>
             </div>
-            <p className="mt-3 text-xs text-muted-foreground">
-              Attribution uses last click within 30 days. Self-referred orders never earn commission.
-            </p>
+
+            <div className="mt-5 grid gap-5 sm:grid-cols-[220px_1fr]">
+              <div className="space-y-2">
+                {qrDataUrl ? (
+                  <>
+                    <img
+                      src={qrDataUrl}
+                      alt={`QR code for referral link ${shareLink}`}
+                      className="h-40 w-40 rounded-lg border border-border bg-white p-2"
+                    />
+                    <Button variant="outline" size="sm" asChild>
+                      <a href={qrDataUrl} download={`${partner.referral_code}-qr.png`}>
+                        Download QR
+                      </a>
+                    </Button>
+                  </>
+                ) : (
+                  <div className="h-40 w-40 animate-pulse rounded-lg border border-border bg-secondary" />
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label>Link a specific product</Label>
+                <Select value={productSlug} onValueChange={setProductSlug}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Whole store" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__store">Whole store (home page)</SelectItem>
+                    {(stats?.products ?? []).map((product) => (
+                      <SelectItem key={product.id} value={product.slug}>
+                        {product.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Attribution uses last click within 30 days. Self-referred orders never earn
+                  commission.
+                </p>
+              </div>
+            </div>
           </div>
         </TabsContent>
 
         <TabsContent value="orders" className="mt-6">
-          {(stats?.orders.length ?? 0) === 0 ? (
+          {statsLoading ? (
+            <p className="text-sm text-muted-foreground">Loading orders…</p>
+          ) : (stats?.orders.length ?? 0) === 0 ? (
             <EmptyState message="No referred orders yet. Share your link to get started." />
           ) : (
             <Table
