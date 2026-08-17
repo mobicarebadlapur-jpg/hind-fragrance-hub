@@ -3,12 +3,19 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Download } from "lucide-react";
+import { Download, Plus } from "lucide-react";
 import { DashboardShell, EmptyState, StatCard, StatusPill } from "@/components/dash/DashboardShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -26,6 +33,7 @@ import {
   updatePartnerStatus,
   updatePayoutStatus,
   updateSetting,
+  upsertProduct,
 } from "@/lib/admin.functions";
 
 export const Route = createFileRoute("/_authenticated/admin")({
@@ -54,7 +62,13 @@ const ORDER_STATUSES = [
   "refunded",
   "returned",
 ] as const;
-const PARTNER_STATUSES = ["pending", "payment_pending", "active", "suspended", "cancelled"] as const;
+const PARTNER_STATUSES = [
+  "pending",
+  "payment_pending",
+  "active",
+  "suspended",
+  "cancelled",
+] as const;
 const COMMISSION_STATUSES = [
   "pending",
   "approved",
@@ -82,12 +96,13 @@ function AdminConsole() {
   const setCommission = useServerFn(updateCommissionStatus);
   const setPayout = useServerFn(updatePayoutStatus);
   const setBlocked = useServerFn(setCustomerBlocked);
+  const saveProduct = useServerFn(upsertProduct);
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-data"],
     enabled: Boolean(isAdmin),
     queryFn: async () => {
-      const [partners, orders, commissions, payouts, customers, settings, products] =
+      const [partners, orders, commissions, payouts, customers, settings, products, auditLogs] =
         await Promise.all([
           supabase.from("partners").select("*").order("created_at", { ascending: false }),
           supabase
@@ -104,9 +119,18 @@ function AdminConsole() {
               "id,partner_id,amount,method,account_holder,bank_name,status,notes,created_at,updated_at,account_number_last4,upi_id_masked,ifsc_masked, partners(partner_code)",
             )
             .order("created_at", { ascending: false }),
-          supabase.from("profiles").select("*").order("created_at", { ascending: false }).limit(200),
+          supabase
+            .from("profiles")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(200),
           supabase.from("app_settings").select("*"),
           supabase.from("products").select("*").order("created_at", { ascending: false }),
+          supabase
+            .from("audit_logs")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(100),
         ]);
       return {
         partners: partners.data ?? [],
@@ -116,16 +140,15 @@ function AdminConsole() {
         customers: customers.data ?? [],
         settings: settings.data ?? [],
         products: products.data ?? [],
+        auditLogs: auditLogs.data ?? [],
       };
     },
   });
 
   const commissionSetting = data?.settings.find((s) => s.key === "commission")?.value as
-    | Record<string, unknown>
-    | undefined;
+    Record<string, unknown> | undefined;
   const membershipSetting = data?.settings.find((s) => s.key === "membership")?.value as
-    | Record<string, unknown>
-    | undefined;
+    Record<string, unknown> | undefined;
 
   const [form, setForm] = useState({
     default_percent: "10",
@@ -201,6 +224,7 @@ function AdminConsole() {
           <TabsTrigger value="customers">Customers</TabsTrigger>
           <TabsTrigger value="products">Products</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
+          <TabsTrigger value="audit">Audit log</TabsTrigger>
         </TabsList>
 
         {isLoading && <p className="mt-6 text-sm text-muted-foreground">Loading data…</p>}
@@ -287,7 +311,11 @@ function AdminConsole() {
             <Row
               key={p.id}
               title={`${inr(p.amount)} · ${p.method.toUpperCase()}`}
-              meta={`${p.partners?.partner_code ?? ""} · ${shortDate(p.created_at)}`}
+              meta={`${p.partners?.partner_code ?? ""} · ${shortDate(p.created_at)} · ${
+                p.method === "upi"
+                  ? `UPI ${p.upi_id_masked ?? "—"}`
+                  : `${p.bank_name ?? "Bank"} ${p.account_number_last4 ? `••••${p.account_number_last4}` : "—"} · IFSC ${p.ifsc_masked ?? "—"}`
+              }${p.account_holder ? ` · ${p.account_holder}` : ""}`}
               status={p.status}
               options={PAYOUT_STATUSES}
               onChange={(status) =>
@@ -301,6 +329,9 @@ function AdminConsole() {
         </TabsContent>
 
         <TabsContent value="customers" className="mt-6 space-y-3">
+          {!isLoading && (data?.customers ?? []).length === 0 && (
+            <EmptyState message="No customers yet." />
+          )}
           {(data?.customers ?? []).map((c) => (
             <div
               key={c.id}
@@ -332,6 +363,20 @@ function AdminConsole() {
         </TabsContent>
 
         <TabsContent value="products" className="mt-6 space-y-3">
+          <div className="flex justify-end">
+            <ProductDialog
+              key="new-product"
+              trigger={
+                <Button size="sm">
+                  <Plus className="mr-2 h-4 w-4" /> New product
+                </Button>
+              }
+              onSave={(payload) => run(saveProduct({ data: payload }), "Product saved")}
+            />
+          </div>
+          {!isLoading && (data?.products ?? []).length === 0 && (
+            <EmptyState message="No products yet. Create your first product." />
+          )}
           {(data?.products ?? []).map((p) => (
             <div
               key={p.id}
@@ -340,12 +385,22 @@ function AdminConsole() {
               <div>
                 <p className="font-medium">{p.name}</p>
                 <p className="text-xs text-muted-foreground">
-                  {p.category} · {p.sku} · stock {p.stock}
+                  {p.category} · {p.sku} · stock {p.stock} · commission{" "}
+                  {p.commission_percent ?? form.default_percent}%
                 </p>
               </div>
               <div className="flex items-center gap-3">
                 <StatusPill status={p.status} />
                 <span className="font-medium">{inr(p.sale_price ?? p.price)}</span>
+                <ProductDialog
+                  product={p}
+                  trigger={
+                    <Button size="sm" variant="outline">
+                      Edit
+                    </Button>
+                  }
+                  onSave={(payload) => run(saveProduct({ data: payload }), "Product saved")}
+                />
               </div>
             </div>
           ))}
@@ -409,6 +464,23 @@ function AdminConsole() {
             </Button>
           </form>
         </TabsContent>
+        <TabsContent value="audit" className="mt-6 space-y-3">
+          {!isLoading && (data?.auditLogs ?? []).length === 0 && (
+            <EmptyState message="No admin activity recorded yet." />
+          )}
+          {(data?.auditLogs ?? []).map((log) => (
+            <div key={log.id} className="rounded-xl border border-border bg-card p-4">
+              <p className="text-sm font-medium">{log.action}</p>
+              <p className="text-xs text-muted-foreground">
+                {shortDate(log.created_at)}
+                {log.target ? ` · ${log.target}` : ""}
+                {log.old_value != null || log.new_value != null
+                  ? ` · ${JSON.stringify(log.old_value)} → ${JSON.stringify(log.new_value)}`
+                  : ""}
+              </p>
+            </div>
+          ))}
+        </TabsContent>
       </Tabs>
     </DashboardShell>
   );
@@ -449,5 +521,164 @@ function Row({
         </Select>
       </div>
     </div>
+  );
+}
+
+type ProductRow = {
+  id: string;
+  name: string;
+  slug: string;
+  sku: string;
+  category: string;
+  short_description: string | null;
+  image_url: string | null;
+  price: number;
+  sale_price: number | null;
+  stock: number;
+  status: string;
+  featured: boolean;
+  commission_percent: number | null;
+};
+
+type ProductPayload = {
+  id?: string;
+  name: string;
+  slug: string;
+  sku: string;
+  category: string;
+  short_description?: string;
+  image_url?: string | null;
+  price: number;
+  sale_price?: number | null;
+  stock: number;
+  status: "active" | "inactive";
+  featured: boolean;
+  commission_percent?: number | null;
+};
+
+function ProductDialog({
+  product,
+  trigger,
+  onSave,
+}: {
+  product?: ProductRow;
+  trigger: React.ReactNode;
+  onSave: (payload: ProductPayload) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [f, setF] = useState({
+    name: product?.name ?? "",
+    slug: product?.slug ?? "",
+    sku: product?.sku ?? "",
+    category: product?.category ?? "attar",
+    short_description: product?.short_description ?? "",
+    image_url: product?.image_url ?? "",
+    price: String(product?.price ?? ""),
+    sale_price: product?.sale_price != null ? String(product.sale_price) : "",
+    stock: String(product?.stock ?? 0),
+    status: (product?.status === "inactive" ? "inactive" : "active") as "active" | "inactive",
+    featured: Boolean(product?.featured),
+    commission_percent:
+      product?.commission_percent != null ? String(product.commission_percent) : "",
+  });
+
+  const set = (key: keyof typeof f, value: string | boolean) =>
+    setF((p) => ({ ...p, [key]: value }));
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!f.name.trim() || !f.slug.trim() || !f.sku.trim() || !Number(f.price)) {
+      toast.error("Name, slug, SKU and a price above zero are required.");
+      return;
+    }
+    if (!/^[a-z0-9-]+$/.test(f.slug)) {
+      toast.error("Slug can only contain lowercase letters, numbers and dashes.");
+      return;
+    }
+    setBusy(true);
+    await onSave({
+      ...(product?.id ? { id: product.id } : {}),
+      name: f.name.trim(),
+      slug: f.slug.trim(),
+      sku: f.sku.trim(),
+      category: f.category.trim(),
+      ...(f.short_description.trim() ? { short_description: f.short_description.trim() } : {}),
+      image_url: f.image_url.trim() || null,
+      price: Number(f.price),
+      sale_price: f.sale_price ? Number(f.sale_price) : null,
+      stock: Number(f.stock || 0),
+      status: f.status,
+      featured: f.featured,
+      commission_percent: f.commission_percent ? Number(f.commission_percent) : null,
+    });
+    setBusy(false);
+    setOpen(false);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{product ? "Edit product" : "New product"}</DialogTitle>
+        </DialogHeader>
+        <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
+          {(
+            [
+              ["name", "Name", "sm:col-span-2"],
+              ["slug", "Slug", ""],
+              ["sku", "SKU", ""],
+              ["category", "Category", ""],
+              ["price", "Price (₹)", ""],
+              ["sale_price", "Sale price (₹)", ""],
+              ["stock", "Stock", ""],
+              ["commission_percent", "Commission % (blank = default)", ""],
+              ["image_url", "Image URL", "sm:col-span-2"],
+              ["short_description", "Short description", "sm:col-span-2"],
+            ] as const
+          ).map(([key, label, span]) => (
+            <div key={key} className={`space-y-1.5 ${span}`}>
+              <Label htmlFor={`p-${key}`}>{label}</Label>
+              <Input
+                id={`p-${key}`}
+                value={f[key] as string}
+                onChange={(e) => set(key, e.target.value)}
+              />
+            </div>
+          ))}
+          <div className="space-y-1.5">
+            <Label htmlFor="p-status">Status</Label>
+            <Select value={f.status} onValueChange={(v) => set("status", v)}>
+              <SelectTrigger id="p-status">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="p-featured">Featured</Label>
+            <Select
+              value={f.featured ? "yes" : "no"}
+              onValueChange={(v) => set("featured", v === "yes")}
+            >
+              <SelectTrigger id="p-featured">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="yes">Yes</SelectItem>
+                <SelectItem value="no">No</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button type="submit" className="sm:col-span-2" disabled={busy}>
+            {busy ? "Saving…" : "Save product"}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
