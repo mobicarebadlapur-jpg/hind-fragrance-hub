@@ -1,10 +1,10 @@
-import { createStart, createMiddleware } from "@tanstack/react-start";
+import { createStart } from "@tanstack/react-start";
 
 import { renderErrorPage } from "./lib/error-page";
 import { createHostingerCsrfMiddleware } from "./lib/csrf";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-attacher";
 
-const errorMiddleware = createMiddleware().server(async ({ next }) => {
+const errorMiddleware = createHostingerRequestMiddleware(async ({ next }) => {
   try {
     return await next();
   } catch (error) {
@@ -19,11 +19,13 @@ const errorMiddleware = createMiddleware().server(async ({ next }) => {
   }
 });
 
-// Use a local Hostinger-safe implementation so the production SSR bundle does
-// not depend on a mismatched createCsrfMiddleware export facade.
 const csrfMiddleware = createHostingerCsrfMiddleware({
   filter: (ctx) => ctx.handlerType === "serverFn",
 });
+
+function createHostingerRequestMiddleware(handler: (ctx: { next: () => Promise<Response> }) => Promise<Response>) {
+  return async (ctx: { next: () => Promise<Response> }) => handler(ctx);
+}
 
 export const startInstance = createStart(() => ({
   functionMiddleware: [attachSupabaseAuth],
