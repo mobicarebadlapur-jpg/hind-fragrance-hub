@@ -2,11 +2,15 @@ import { createServerFn } from "@tanstack/react-start";
 import { admin } from "./platform.server";
 
 /**
- * Idempotently provisions the demo admin / partner / customer accounts so the
- * whole platform can be tested without any third-party credentials.
- * DEMO ONLY — remove or protect this endpoint before going live.
+ * Demo-only account seeding. Disabled by default so production cannot expose
+ * an endpoint that creates privileged accounts with published credentials.
+ * Set DEMO_ACCESS_ENABLED=true only in an isolated non-production environment.
  */
 export const seedDemoAccounts = createServerFn({ method: "POST" }).handler(async () => {
+  if (process.env.DEMO_ACCESS_ENABLED !== "true") {
+    throw new Error("Demo account seeding is disabled");
+  }
+
   const db = await admin();
   const accounts = [
     { email: "admin@hindfragrance.com", password: "Admin@199", name: "Hind Admin", role: "admin" },
@@ -53,7 +57,6 @@ export const seedDemoAccounts = createServerFn({ method: "POST" }).handler(async
         .upsert({ user_id: userId, role: "customer" }, { onConflict: "user_id,role" });
   }
 
-  // Demo partner membership with the documented demo referral code.
   const partnerUser = ids["partner"];
   if (partnerUser) {
     const { data: existing } = await db
