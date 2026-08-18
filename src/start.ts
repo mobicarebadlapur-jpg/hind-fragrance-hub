@@ -1,22 +1,6 @@
-import { createMiddleware, createStart } from "@tanstack/react-start";
+import { createStart } from "@tanstack/react-start";
 
-import { createHostingerCsrfMiddleware } from "./lib/csrf";
-import { attachSupabaseAuth } from "@/integrations/supabase/auth-attacher";
-
-const errorMiddleware = createMiddleware().server(async ({ next }) => {
-  try {
-    return await next();
-  } catch (error) {
-    console.error("[SSR request error]", error);
-    throw error;
-  }
-});
-
-const csrfMiddleware = createHostingerCsrfMiddleware({
-  filter: (ctx) => ctx.handlerType === "serverFn",
-});
-
-export const startInstance = createStart(() => ({
-  functionMiddleware: [attachSupabaseAuth],
-  requestMiddleware: [errorMiddleware, csrfMiddleware],
-}));
+// Keep Start-level configuration minimal while the Hostinger SSR runtime
+// resolves the middleware chain. Global auth/CSRF middleware is attached
+// locally to the affected server functions instead of the global SSR chain.
+export const startInstance = createStart(() => ({}));
