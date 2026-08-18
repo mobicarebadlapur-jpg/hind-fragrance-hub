@@ -1,4 +1,4 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -24,7 +24,11 @@ export const Route = createFileRoute("/product/$slug")({
     ],
   }),
   component: ProductPage,
-  notFoundComponent: () => (
+  notFoundComponent: ProductNotFound,
+});
+
+function ProductNotFound() {
+  return (
     <PublicLayout>
       <div className="mx-auto max-w-3xl px-4 py-24 text-center">
         <h1 className="font-display text-4xl">Fragrance not found</h1>
@@ -36,8 +40,8 @@ export const Route = createFileRoute("/product/$slug")({
         </Button>
       </div>
     </PublicLayout>
-  ),
-});
+  );
+}
 
 function ProductPage() {
   const { slug } = Route.useParams();
@@ -53,18 +57,19 @@ function ProductPage() {
         .eq("slug", slug)
         .eq("status", "active")
         .maybeSingle();
-      if (!data) throw notFound();
       return data;
     },
   });
 
-  if (isPending || !product) {
+  if (isPending) {
     return (
       <PublicLayout>
         <div className="mx-auto max-w-6xl px-4 py-24 text-sm text-muted-foreground">Loading…</div>
       </PublicLayout>
     );
   }
+
+  if (!product) return <ProductNotFound />;
 
   const price = Number(product.sale_price ?? product.price);
   const soldOut = (product.stock ?? 0) <= 0;
