@@ -1,6 +1,8 @@
 name: Update Bun lockfile
 
 on:
+  push:
+    branches: [fix/hostinger-passenger-ssr]
   workflow_dispatch:
 
 permissions:
