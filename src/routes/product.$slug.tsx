@@ -102,7 +102,8 @@ function ProductPage() {
             )}
           </div>
           <p className="mt-6 text-sm leading-relaxed text-muted-foreground">
-            {product.description ?? "A signature alcohol-free blend from the Hind Fragrance atelier."}
+            {product.description ??
+              "A signature alcohol-free blend from the Hind Fragrance atelier."}
           </p>
 
           <div className="mt-8 flex items-center gap-4">

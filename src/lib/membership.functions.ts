@@ -90,7 +90,8 @@ export const verifyMembershipPayment = createServerFn({ method: "POST" })
         return { ok: false as const, error: "Payment verification is not configured yet." };
     }
 
-    const paymentId = data.gatewayPaymentId ?? `pay_${crypto.randomUUID().replace(/-/g, "").slice(0, 18)}`;
+    const paymentId =
+      data.gatewayPaymentId ?? `pay_${crypto.randomUUID().replace(/-/g, "").slice(0, 18)}`;
 
     const { data: existing } = await db
       .from("partners")

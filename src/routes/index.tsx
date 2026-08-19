@@ -77,7 +77,11 @@ function Home() {
           {[
             { icon: Leaf, title: "Alcohol-free", body: "Pure oil concentrates, skin friendly." },
             { icon: Sparkles, title: "Long lasting", body: "8–12 hours of steady projection." },
-            { icon: ShieldCheck, title: "Secure payments", body: "Encrypted checkout, tracked orders." },
+            {
+              icon: ShieldCheck,
+              title: "Secure payments",
+              body: "Encrypted checkout, tracked orders.",
+            },
             {
               icon: BadgeIndianRupee,
               title: "Earn as a partner",

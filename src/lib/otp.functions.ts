@@ -25,7 +25,10 @@ export const sendOtp = createServerFn({ method: "POST" })
       .eq("mobile", data.mobile)
       .gte("created_at", since);
     if ((count ?? 0) >= 5) {
-      return { ok: false as const, error: "Too many OTP requests. Please try again in 10 minutes." };
+      return {
+        ok: false as const,
+        error: "Too many OTP requests. Please try again in 10 minutes.",
+      };
     }
 
     const code = String(Math.floor(100000 + Math.random() * 900000));

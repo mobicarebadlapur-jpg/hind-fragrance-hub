@@ -11,11 +11,17 @@ const checkoutSchema = z.object({
     .max(30),
   referralCode: z.string().trim().max(32).optional().nullable(),
   shippingName: z.string().trim().min(2).max(100),
-  mobile: z.string().trim().regex(/^[0-9]{10}$/),
+  mobile: z
+    .string()
+    .trim()
+    .regex(/^[0-9]{10}$/),
   address: z.string().trim().min(5).max(300),
   city: z.string().trim().min(2).max(80),
   state: z.string().trim().min(2).max(80),
-  pincode: z.string().trim().regex(/^[0-9]{6}$/),
+  pincode: z
+    .string()
+    .trim()
+    .regex(/^[0-9]{6}$/),
 });
 
 /**
@@ -124,7 +130,8 @@ export const payForOrder = createServerFn({ method: "POST" })
     if (!payment.demo_mode) {
       return {
         ok: false as const,
-        error: "Payment gateway is not configured yet. Please try again after payment setup is completed.",
+        error:
+          "Payment gateway is not configured yet. Please try again after payment setup is completed.",
       };
     }
 

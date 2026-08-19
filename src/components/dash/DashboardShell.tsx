@@ -45,23 +45,20 @@ export function StatCard({
   return (
     <div className="rounded-xl border border-border bg-card p-5">
       <p className="eyebrow">{label}</p>
-      <p className="mt-2 font-display text-3xl">
-        {currency ? inr(Number(value)) : value}
-      </p>
+      <p className="mt-2 font-display text-3xl">{currency ? inr(Number(value)) : value}</p>
       {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
 }
 
 export function StatusPill({ status }: { status: string }) {
-  const tone =
-    /paid|approved|active|delivered|success|completed/.test(status)
-      ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
-      : /pending|requested|processing|created|shipped|hold/.test(status)
-        ? "bg-gold/20 text-foreground"
-        : /cancel|refund|reversed|rejected|failed|blocked|suspend/.test(status)
-          ? "bg-destructive/15 text-destructive"
-          : "bg-secondary text-muted-foreground";
+  const tone = /paid|approved|active|delivered|success|completed/.test(status)
+    ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+    : /pending|requested|processing|created|shipped|hold/.test(status)
+      ? "bg-gold/20 text-foreground"
+      : /cancel|refund|reversed|rejected|failed|blocked|suspend/.test(status)
+        ? "bg-destructive/15 text-destructive"
+        : "bg-secondary text-muted-foreground";
   return (
     <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] capitalize ${tone}`}>
       {status.replace(/_/g, " ")}
@@ -70,5 +67,9 @@ export function StatusPill({ status }: { status: string }) {
 }
 
 export function EmptyState({ message }: { message: string }) {
-  return <p className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">{message}</p>;
+  return (
+    <p className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+      {message}
+    </p>
+  );
 }

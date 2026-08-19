@@ -10,7 +10,8 @@ export type Product = Database["public"]["Tables"]["products"]["Row"];
 export function ProductCard({ product }: { product: Product }) {
   const cart = useCart();
   const price = Number(product.sale_price ?? product.price);
-  const hasDiscount = product.sale_price != null && Number(product.sale_price) < Number(product.price);
+  const hasDiscount =
+    product.sale_price != null && Number(product.sale_price) < Number(product.price);
   const soldOut = (product.stock ?? 0) <= 0;
 
   return (

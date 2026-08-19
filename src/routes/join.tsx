@@ -24,7 +24,10 @@ export const Route = createFileRoute("/join")({
           "Register as a Hind Fragrance Business Partner for ₹199, verify your mobile and start earning referral commission.",
       },
       { property: "og:title", content: "Join as a Business Partner — Hind Fragrance" },
-      { property: "og:description", content: "One-time ₹199 registration. Earn on every referral." },
+      {
+        property: "og:description",
+        content: "One-time ₹199 registration. Earn on every referral.",
+      },
     ],
   }),
   component: Join,
@@ -231,7 +234,11 @@ function Join() {
                 placeholder="••••••"
                 className="text-center tracking-[0.5em]"
               />
-              <Button className="w-full" onClick={handleVerify} disabled={busy || code.length !== 6}>
+              <Button
+                className="w-full"
+                onClick={handleVerify}
+                disabled={busy || code.length !== 6}
+              >
                 {busy ? "Verifying…" : "Verify mobile"}
               </Button>
               <button

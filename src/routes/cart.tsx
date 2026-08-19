@@ -9,7 +9,10 @@ export const Route = createFileRoute("/cart")({
   head: () => ({
     meta: [
       { title: "Your Cart — Hind Fragrance" },
-      { name: "description", content: "Review the attars and perfumes in your Hind Fragrance cart." },
+      {
+        name: "description",
+        content: "Review the attars and perfumes in your Hind Fragrance cart.",
+      },
       { property: "og:title", content: "Your Cart — Hind Fragrance" },
       { property: "og:description", content: "Review your Hind Fragrance cart before checkout." },
     ],
@@ -40,7 +43,11 @@ function CartPage() {
                 <li key={item.productId} className="flex gap-4 p-4">
                   <div className="h-20 w-20 shrink-0 overflow-hidden rounded-md bg-secondary">
                     {item.image && (
-                      <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
+                      <img
+                        src={item.image}
+                        alt={item.name}
+                        className="h-full w-full object-cover"
+                      />
                     )}
                   </div>
                   <div className="flex-1">

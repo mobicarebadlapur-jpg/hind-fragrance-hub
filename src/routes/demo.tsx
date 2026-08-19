@@ -12,7 +12,8 @@ export const Route = createFileRoute("/demo")({
       { title: "Demo Access — Hind Fragrance Platform" },
       {
         name: "description",
-        content: "Create demo admin, partner and customer logins to explore the Hind Fragrance platform.",
+        content:
+          "Create demo admin, partner and customer logins to explore the Hind Fragrance platform.",
       },
       { property: "og:title", content: "Demo Access — Hind Fragrance" },
       { property: "og:description", content: "Explore the platform with demo credentials." },
@@ -32,9 +33,9 @@ function Demo() {
         <span className="eyebrow">Testing</span>
         <h1 className="mt-2 font-display text-4xl">Demo access</h1>
         <p className="mt-3 text-sm text-muted-foreground">
-          Generate ready-to-use admin, partner and customer logins so you can test the full
-          purchase → commission → payout lifecycle. Payments and OTP run in demo mode until live
-          keys are configured.
+          Generate ready-to-use admin, partner and customer logins so you can test the full purchase
+          → commission → payout lifecycle. Payments and OTP run in demo mode until live keys are
+          configured.
         </p>
         <Button
           className="mt-6"
