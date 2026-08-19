@@ -1,16 +1,21 @@
-name: Deploy to Hostinger
+name: Build Hostinger deploy branch
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
 
+permissions:
+  contents: write
+
 jobs:
-  deploy:
+  deploy-artifact:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -27,33 +32,36 @@ jobs:
           VITE_USE_DEMO_MODE: ${{ secrets.VITE_USE_DEMO_MODE }}
         run: bun run build
 
-      - name: Package deployment
-        run: |
-          tar -czf hostinger-deploy.tar.gz .output app.js package.json
-
-      - name: Upload deployment package
-        uses: appleboy/scp-action@v1
-        with:
-          host: ${{ secrets.HOSTINGER_SSH_HOST }}
-          username: ${{ secrets.HOSTINGER_SSH_USERNAME }}
-          key: ${{ secrets.HOSTINGER_SSH_KEY }}
-          port: ${{ secrets.HOSTINGER_SSH_PORT || 22 }}
-          source: "hostinger-deploy.tar.gz"
-          target: ${{ secrets.HOSTINGER_APP_PATH }}
-
-      - name: Extract and restart application
-        uses: appleboy/ssh-action@v1
+      - name: Publish deploy artifact branch
         env:
-          APP_PATH: ${{ secrets.HOSTINGER_APP_PATH }}
-        with:
-          host: ${{ secrets.HOSTINGER_SSH_HOST }}
-          username: ${{ secrets.HOSTINGER_SSH_USERNAME }}
-          key: ${{ secrets.HOSTINGER_SSH_KEY }}
-          port: ${{ secrets.HOSTINGER_SSH_PORT || 22 }}
-          envs: APP_PATH
-          script: |
-            set -e
-            cd "$APP_PATH"
-            tar -xzf hostinger-deploy.tar.gz
-            rm -f hostinger-deploy.tar.gz
-            echo "Hostinger deployment files installed. Passenger will restart app.js."
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Keep only the production Passenger entrypoint and Nitro standalone output.
+          rm -rf /tmp/hostinger-deploy
+          mkdir -p /tmp/hostinger-deploy
+          cp -a .output /tmp/hostinger-deploy/.output
+          cp app.js /tmp/hostinger-deploy/app.js
+          cp package.json /tmp/hostinger-deploy/package.json
+
+          # Publish an orphan branch so main remains clean and .output stays ignored there.
+          git switch --orphan deploy
+          git rm -rf . >/dev/null 2>&1 || true
+          cp -a /tmp/hostinger-deploy/.output .output
+          cp /tmp/hostinger-deploy/app.js app.js
+          cp /tmp/hostinger-deploy/package.json package.json
+
+          git add -f .output app.js package.json
+          git commit -m "deploy: build production artifact from ${GITHUB_SHA}"
+          git push origin deploy --force
+
+      - name: Deployment instructions
+        run: |
+          echo "Deploy artifact published to branch: deploy"
+          echo "Configure Hostinger hPanel Git deployment to pull branch 'deploy'."
+          echo "Hostinger application root must be the folder where this branch is deployed."
+          echo "Startup file: app.js; Node.js: 22.x; Mode: Production."
