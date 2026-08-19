@@ -119,21 +119,43 @@ export const payForOrder = createServerFn({ method: "POST" })
 
     const payment = await getSetting<PaymentSettings>("payment", {
       provider: "razorpay",
-      demo_mode: true,
+      demo_mode: false,
     });
+    if (!payment.demo_mode) {
+      return {
+        ok: false as const,
+        error: "Payment gateway is not configured yet. Please try again after payment setup is completed.",
+      };
+    }
+
     const paymentId = `pay_${crypto.randomUUID().replace(/-/g, "").slice(0, 18)}`;
-    await db.from("transactions").insert({
+    const { error: transactionError } = await db.from("transactions").insert({
       user_id: context.userId,
       partner_id: order.partner_id,
       amount: order.total,
-      gateway: payment.demo_mode ? "demo" : payment.provider,
+      gateway: "demo",
       gateway_order_id: order.order_number,
       gateway_payment_id: paymentId,
       status: "success",
       payment_type: "product_order",
     });
+    if (transactionError) {
+      return { ok: false as const, error: "Could not record the payment transaction." };
+    }
+
     // The database commission engine fires on this status change.
-    await db.from("orders").update({ status: "paid", payment_id: paymentId }).eq("id", order.id);
+    const { data: updatedOrder, error: updateError } = await db
+      .from("orders")
+      .update({ status: "paid", payment_id: paymentId })
+      .eq("id", order.id)
+      .eq("customer_id", context.userId)
+      .in("status", ["payment_pending", "created"])
+      .select("id")
+      .maybeSingle();
+    if (updateError || !updatedOrder) {
+      return { ok: false as const, error: "Payment could not be confirmed for this order." };
+    }
+
     await notify(
       context.userId,
       "Order confirmed",
