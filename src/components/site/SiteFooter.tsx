@@ -9,8 +9,8 @@ export function SiteFooter() {
           <Logo inverted />
           <p className="mt-4 max-w-sm text-sm text-ink-foreground/70">
             Hind Fragrance (Alhind Fragrance India) crafts alcohol-free attars, perfumes and home
-            fragrances. Our Business Partner programme is a referral sales programme — partners
-            earn commission on eligible product sales only.
+            fragrances. Our Business Partner programme is a referral sales programme — partners earn
+            commission on eligible product sales only.
           </p>
         </div>
         <div>

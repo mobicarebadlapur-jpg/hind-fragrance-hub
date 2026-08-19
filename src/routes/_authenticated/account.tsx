@@ -84,7 +84,9 @@ function Account() {
         </TabsList>
 
         <TabsContent value="orders" className="mt-6 space-y-4">
-          {(orders ?? []).length === 0 && <EmptyState message="You haven't placed any orders yet." />}
+          {(orders ?? []).length === 0 && (
+            <EmptyState message="You haven't placed any orders yet." />
+          )}
           {(orders ?? []).map((order) => (
             <div key={order.id} className="rounded-xl border border-border bg-card p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">

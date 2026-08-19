@@ -140,14 +140,7 @@ export const updatePayoutStatus = createServerFn({ method: "POST" })
     z
       .object({
         payoutId: z.string().uuid(),
-        status: z.enum([
-          "requested",
-          "under_review",
-          "approved",
-          "processing",
-          "paid",
-          "rejected",
-        ]),
+        status: z.enum(["requested", "under_review", "approved", "processing", "paid", "rejected"]),
         notes: z.string().trim().max(300).optional(),
       })
       .parse(input),

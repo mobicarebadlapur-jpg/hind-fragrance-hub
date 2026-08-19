@@ -7,7 +7,7 @@ import { admin } from "./platform.server";
  * Set DEMO_ACCESS_ENABLED=true only in an isolated non-production environment.
  */
 export const seedDemoAccounts = createServerFn({ method: "POST" }).handler(async () => {
-  if (process.env.DEMO_ACCESS_ENABLED !== "true") {
+  if (process.env["DEMO_ACCESS_ENABLED"] !== "true") {
     throw new Error("Demo account seeding is disabled");
   }
 

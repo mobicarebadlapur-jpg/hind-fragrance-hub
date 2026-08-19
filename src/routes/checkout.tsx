@@ -116,7 +116,10 @@ function Checkout() {
           <p className="mt-3 text-sm text-muted-foreground">
             You need an account so we can track and deliver your order.
           </p>
-          <Button className="mt-6" onClick={() => navigate({ to: "/auth", search: { redirect: "/checkout" } })}>
+          <Button
+            className="mt-6"
+            onClick={() => navigate({ to: "/auth", search: { redirect: "/checkout" } })}
+          >
             Sign in or create account
           </Button>
         </div>
@@ -164,8 +167,18 @@ function Checkout() {
                 maxLength={300}
               />
             </div>
-            <Field label="City" value={form.city} onChange={(v) => setForm({ ...form, city: v })} maxLength={80} />
-            <Field label="State" value={form.state} onChange={(v) => setForm({ ...form, state: v })} maxLength={80} />
+            <Field
+              label="City"
+              value={form.city}
+              onChange={(v) => setForm({ ...form, city: v })}
+              maxLength={80}
+            />
+            <Field
+              label="State"
+              value={form.state}
+              onChange={(v) => setForm({ ...form, state: v })}
+              maxLength={80}
+            />
             <Field
               label="Pincode"
               value={form.pincode}
@@ -234,7 +247,12 @@ function Field({
   return (
     <div className="space-y-1.5">
       <Label>{label}</Label>
-      <Input value={value} onChange={(e) => onChange(e.target.value)} maxLength={maxLength} required />
+      <Input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        maxLength={maxLength}
+        required
+      />
     </div>
   );
 }

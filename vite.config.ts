@@ -16,12 +16,4 @@ export default defineConfig({
   nitro: {
     preset: "node-server",
   },
-  // Hostinger/Nitro SSR can hit Vite's transitive re-export facade for
-  // @tanstack/react-start. Explicitly prebundle the facade and its core export
-  // provider so createMiddleware is present during cold-start SSR evaluation.
-  ssr: {
-    optimizeDeps: {
-      include: ["@tanstack/react-start", "@tanstack/start-client-core"],
-    },
-  },
 });

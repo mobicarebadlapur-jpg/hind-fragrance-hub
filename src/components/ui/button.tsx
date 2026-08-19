@@ -19,7 +19,6 @@ const buttonVariants = cva(
         gold: "bg-gold text-ink shadow-sm hover:bg-gold/90",
         "gold-outline": "border border-gold/70 text-gold bg-transparent hover:bg-gold/10",
         "ghost-inverted": "text-ink-foreground hover:bg-white/10",
-
       },
       size: {
         default: "h-9 px-4 py-2",

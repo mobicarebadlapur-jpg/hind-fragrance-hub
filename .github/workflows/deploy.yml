@@ -1,0 +1,59 @@
+name: Deploy to Hostinger
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build production server
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_USE_DEMO_MODE: ${{ secrets.VITE_USE_DEMO_MODE }}
+        run: bun run build
+
+      - name: Package deployment
+        run: |
+          tar -czf hostinger-deploy.tar.gz .output app.js package.json
+
+      - name: Upload deployment package
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.HOSTINGER_SSH_HOST }}
+          username: ${{ secrets.HOSTINGER_SSH_USERNAME }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          port: ${{ secrets.HOSTINGER_SSH_PORT || 22 }}
+          source: "hostinger-deploy.tar.gz"
+          target: ${{ secrets.HOSTINGER_APP_PATH }}
+
+      - name: Extract and restart application
+        uses: appleboy/ssh-action@v1
+        env:
+          APP_PATH: ${{ secrets.HOSTINGER_APP_PATH }}
+        with:
+          host: ${{ secrets.HOSTINGER_SSH_HOST }}
+          username: ${{ secrets.HOSTINGER_SSH_USERNAME }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          port: ${{ secrets.HOSTINGER_SSH_PORT || 22 }}
+          envs: APP_PATH
+          script: |
+            set -e
+            cd "$APP_PATH"
+            tar -xzf hostinger-deploy.tar.gz
+            rm -f hostinger-deploy.tar.gz
+            echo "Hostinger deployment files installed. Passenger will restart app.js."

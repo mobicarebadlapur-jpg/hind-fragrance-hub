@@ -53,10 +53,7 @@ export function createHostingerCsrfMiddleware(options: CsrfOptions = {}) {
       const ctx: CsrfFilterContext = { request, pathname, handlerType };
       if (options.filter && !(await options.filter(ctx))) return next();
 
-      if (
-        options.allowRequestsWithoutOriginCheck ||
-        isSafeSameOriginRequest(request)
-      ) {
+      if (options.allowRequestsWithoutOriginCheck || isSafeSameOriginRequest(request)) {
         return next();
       }
 
