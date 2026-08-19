@@ -1,0 +1,38 @@
+name: Update Bun lockfile
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-lock:
+    if: github.ref == 'refs/heads/fix/hostinger-passenger-ssr'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/hostinger-passenger-ssr
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Add missing dependencies with Bun
+        run: bun add react-day-picker@^10.0.1 @radix-ui/react-dropdown-menu@^2.1.24
+
+      - name: Commit updated manifest and lockfile
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json bun.lock
+          if git diff --cached --quiet; then
+            echo "No lockfile changes to commit."
+            exit 0
+          fi
+          git commit -m "chore: update bun lockfile for missing dependencies"
+          git push origin fix/hostinger-passenger-ssr
