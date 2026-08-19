@@ -2,7 +2,8 @@ name: Update Bun lockfile
 
 on:
   push:
-    branches: [fix/hostinger-passenger-ssr]
+    branches:
+      - fix/hostinger-passenger-ssr
   workflow_dispatch:
 
 permissions:
@@ -24,17 +25,17 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Add missing dependencies with Bun
-        run: bun add react-day-picker@^10.0.1 @radix-ui/react-dropdown-menu@^2.1.24
+      - name: Update lockfile from package manifest
+        run: bun install
 
-      - name: Commit updated manifest and lockfile
+      - name: Commit updated lockfile
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json bun.lock
+          git add bun.lock
           if git diff --cached --quiet; then
-            echo "No lockfile changes to commit."
+            echo "Lockfile is already up to date."
             exit 0
           fi
-          git commit -m "chore: update bun lockfile for missing dependencies"
+          git commit -m "chore: update bun lockfile"
           git push origin fix/hostinger-passenger-ssr
