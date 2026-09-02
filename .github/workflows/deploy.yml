@@ -48,10 +48,9 @@ jobs:
           cp app.js /tmp/hostinger-deploy/app.js
           cp package.json /tmp/hostinger-deploy/package.json
 
-          # Hostinger already receives the prebuilt Nitro artifact. Its npm build step
-          # must not try to run `nitro build` again, because Nitro is a devDependency and
-          # Hostinger may install with production-only dependencies.
-          node -e "const fs=require('fs'); const p='/tmp/hostinger-deploy/package.json'; const j=JSON.parse(fs.readFileSync(p,'utf8')); j.scripts={...j.scripts,build:\"node -e \\\"console.log('[Hostinger] Prebuilt Nitro artifact detected; skipping rebuild')\\\"\"}; fs.writeFileSync(p, JSON.stringify(j,null,2)+'\\n');"
+          # Hostinger installs this artifact with npm, so make the deploy-only
+          # package metadata match Hostinger's package manager. Main stays Bun-based.
+          node -e "const fs=require('fs'); const p='/tmp/hostinger-deploy/package.json'; const j=JSON.parse(fs.readFileSync(p,'utf8')); j.packageManager='npm@10'; j.scripts={...j.scripts,build:\"node -e \\\"console.log('[Hostinger] Prebuilt Nitro artifact detected; skipping rebuild')\\\"\"}; fs.writeFileSync(p, JSON.stringify(j,null,2)+'\\n');"
 
           # Publish an orphan branch so main remains clean and .output stays ignored there.
           git switch --orphan deploy
