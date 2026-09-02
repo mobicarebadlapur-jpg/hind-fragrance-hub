@@ -51,6 +51,8 @@ jobs:
           # Publish an orphan branch so main remains clean and .output stays ignored there.
           git switch --orphan deploy
           git rm -rf . >/dev/null 2>&1 || true
+          # Remove ignored build output left by the checkout before copying the artifact.
+          rm -rf .output app.js package.json
           cp -a /tmp/hostinger-deploy/.output .output
           cp /tmp/hostinger-deploy/app.js app.js
           cp /tmp/hostinger-deploy/package.json package.json
