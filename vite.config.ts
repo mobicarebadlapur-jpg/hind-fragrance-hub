@@ -24,10 +24,13 @@ const supabasePublishableKey =
   FALLBACK_SUPABASE_PUBLISHABLE_KEY;
 
 export default defineConfig({
-  define: {
-    "import.meta.env.VITE_SUPABASE_URL": JSON.stringify(supabaseUrl),
-    "import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY": JSON.stringify(supabasePublishableKey),
+  vite: {
+    define: {
+      "import.meta.env.VITE_SUPABASE_URL": JSON.stringify(supabaseUrl),
+      "import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY": JSON.stringify(supabasePublishableKey),
+    },
   },
+
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     server: { entry: "server" },
