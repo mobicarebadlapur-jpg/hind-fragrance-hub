@@ -50,7 +50,9 @@ jobs:
 
           # Hostinger installs this artifact with npm, so make the deploy-only
           # package metadata match Hostinger's package manager. Main stays Bun-based.
-          node -e "const fs=require('fs'); const p='/tmp/hostinger-deploy/package.json'; const j=JSON.parse(fs.readFileSync(p,'utf8')); j.packageManager='npm@10'; j.scripts={...j.scripts,build:\"node -e \\\"console.log('[Hostinger] Prebuilt Nitro artifact detected; skipping rebuild')\\\"\"}; fs.writeFileSync(p, JSON.stringify(j,null,2)+'\\n');"
+          # Use a real validation build command so Hostinger verifies the prebuilt
+          # Nitro artifact instead of treating a pure no-op build as suspicious.
+          node -e "const fs=require('fs'); const p='/tmp/hostinger-deploy/package.json'; const j=JSON.parse(fs.readFileSync(p,'utf8')); j.packageManager='npm@10'; j.scripts={...j.scripts,build:\"node -e \\\"const fs=require('fs'); const files=['.output/nitro.json','.output/server/index.mjs']; const dirs=['.output/server','.output/public']; for(const p of files){if(!fs.existsSync(p)||!fs.statSync(p).isFile()){console.error('[Hostinger] Missing artifact: '+p);process.exit(1)}} for(const p of dirs){if(!fs.existsSync(p)||!fs.statSync(p).isDirectory()){console.error('[Hostinger] Missing artifact directory: '+p);process.exit(1)}} console.log('[Hostinger] Prebuilt Nitro artifact validated; no rebuild required')\\\"\"}; fs.writeFileSync(p, JSON.stringify(j,null,2)+'\\n');"
 
           # Publish an orphan branch so main remains clean and .output stays ignored there.
           git switch --orphan deploy
