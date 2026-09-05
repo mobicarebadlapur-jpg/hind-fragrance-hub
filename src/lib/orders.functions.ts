@@ -103,7 +103,15 @@ export const placeOrder = createServerFn({ method: "POST" })
       .single();
     if (error || !order) return { ok: false as const, error: "Could not create your order." };
 
-    await db.from("order_items").insert(lines.map((l) => ({ ...l, order_id: order.id })));
+    const { error: itemsError } = await db
+      .from("order_items")
+      .insert(lines.map((l) => ({ ...l, order_id: order.id })));
+    if (itemsError) {
+      // Avoid leaving a customer-visible order without its line items.
+      await db.from("orders").delete().eq("id", order.id);
+      return { ok: false as const, error: "Could not save the items in your order." };
+    }
+
     return { ok: true as const, orderId: order.id, orderNumber: order.order_number, total };
   });
 
