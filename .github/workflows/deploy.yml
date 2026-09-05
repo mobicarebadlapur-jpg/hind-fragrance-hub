@@ -32,6 +32,32 @@ jobs:
           VITE_USE_DEMO_MODE: ${{ secrets.VITE_USE_DEMO_MODE }}
         run: bun run build
 
+      - name: Verify Nitro artifact
+        run: |
+          set -euo pipefail
+          test -f .output/nitro.json
+          test -f .output/server/index.mjs
+          test -d .output/server
+          test -d .output/public
+          test ! -e .output/.output
+          grep -q '"preset": "node-server"' .output/nitro.json
+          # A real TanStack Start artifact is multi-MB; an empty Nitro shell is <200kB.
+          size=$(du -sk .output/server | cut -f1)
+          echo "[CI] .output/server size: ${size}kB"
+          test "$size" -gt 500
+          test -d .output/public/assets
+          echo "[CI] Nitro node-server artifact verified"
+
+      - name: Smoke test production server
+        run: |
+          set -euo pipefail
+          PORT=3123 node app.js > /tmp/smoke.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf -o /dev/null http://127.0.0.1:3123/ && break; sleep 1; done
+          code=$(curl -s -o /tmp/root.html -w '%{http_code}' http://127.0.0.1:3123/)
+          cat /tmp/smoke.log
+          test "$code" = "200"
+          echo "[CI] SSR smoke test passed"
+
       - name: Publish deploy artifact branch
         env:
           GH_TOKEN: ${{ github.token }}
@@ -48,22 +74,55 @@ jobs:
           cp app.js /tmp/hostinger-deploy/app.js
           cp package.json /tmp/hostinger-deploy/package.json
 
-          # Hostinger installs this artifact with npm, so make the deploy-only
-          # package metadata match Hostinger's package manager. Main stays Bun-based.
-          # Use a real validation build command so Hostinger verifies the prebuilt
-          # Nitro artifact instead of treating a pure no-op build as suspicious.
-          node -e "const fs=require('fs'); const p='/tmp/hostinger-deploy/package.json'; const j=JSON.parse(fs.readFileSync(p,'utf8')); j.packageManager='npm@10'; j.scripts={...j.scripts,build:\"node -e \\\"const fs=require('fs'); const files=['.output/nitro.json','.output/server/index.mjs']; const dirs=['.output/server','.output/public']; for(const p of files){if(!fs.existsSync(p)||!fs.statSync(p).isFile()){console.error('[Hostinger] Missing artifact: '+p);process.exit(1)}} for(const p of dirs){if(!fs.existsSync(p)||!fs.statSync(p).isDirectory()){console.error('[Hostinger] Missing artifact directory: '+p);process.exit(1)}} console.log('[Hostinger] Prebuilt Nitro artifact validated; no rebuild required')\\\"\"}; fs.writeFileSync(p, JSON.stringify(j,null,2)+'\\n');"
+          # The Nitro node-server artifact is fully self-contained (.output/server
+          # ships its own node_modules), so the deploy package.json carries NO
+          # dependencies. Hostinger's "npm run build" only validates the artifact.
+          cat > /tmp/hostinger-deploy/package.json <<'PKGJSON'
+{
+  "name": "hind-fragrance-hub-deploy",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@10",
+  "engines": { "node": ">=22 <23" },
+  "scripts": {
+    "build": "node ./validate-artifact.mjs",
+    "start": "node app.js"
+  }
+}
+PKGJSON
+
+          cat > /tmp/hostinger-deploy/validate-artifact.mjs <<PKGVALIDATE
+import fs from "node:fs";
+const sourceSha = "${GITHUB_SHA}";
+const files = [".output/nitro.json", ".output/server/index.mjs"];
+const dirs = [".output/server", ".output/public", ".output/public/assets"];
+for (const p of files) {
+  if (!fs.existsSync(p) || !fs.statSync(p).isFile()) {
+    console.error("[Hostinger] Missing artifact file: " + p);
+    process.exit(1);
+  }
+}
+for (const p of dirs) {
+  if (!fs.existsSync(p) || !fs.statSync(p).isDirectory()) {
+    console.error("[Hostinger] Missing artifact directory: " + p);
+    process.exit(1);
+  }
+}
+console.log("[Hostinger] Prebuilt Nitro artifact validated; no rebuild required");
+console.log("[Hostinger] Artifact built from source commit: " + sourceSha);
+PKGVALIDATE
 
           # Publish an orphan branch so main remains clean and .output stays ignored there.
           git switch --orphan deploy
           git rm -rf . >/dev/null 2>&1 || true
           # Remove ignored build output left by the checkout before copying the artifact.
-          rm -rf .output app.js package.json
+          rm -rf .output app.js package.json validate-artifact.mjs
           cp -a /tmp/hostinger-deploy/.output .output
           cp /tmp/hostinger-deploy/app.js app.js
           cp /tmp/hostinger-deploy/package.json package.json
+          cp /tmp/hostinger-deploy/validate-artifact.mjs validate-artifact.mjs
 
-          git add -f .output app.js package.json
+          git add -f .output app.js package.json validate-artifact.mjs
           git commit -m "deploy: build production artifact from ${GITHUB_SHA}"
           git push origin deploy --force
 
