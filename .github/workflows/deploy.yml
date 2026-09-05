@@ -78,39 +78,39 @@ jobs:
           # ships its own node_modules), so the deploy package.json carries NO
           # dependencies. Hostinger's "npm run build" only validates the artifact.
           cat > /tmp/hostinger-deploy/package.json <<'PKGJSON'
-{
-  "name": "hind-fragrance-hub-deploy",
-  "private": true,
-  "type": "module",
-  "packageManager": "npm@10",
-  "engines": { "node": ">=22 <23" },
-  "scripts": {
-    "build": "node ./validate-artifact.mjs",
-    "start": "node app.js"
-  }
-}
-PKGJSON
+          {
+            "name": "hind-fragrance-hub-deploy",
+            "private": true,
+            "type": "module",
+            "packageManager": "npm@10",
+            "engines": { "node": ">=22 <23" },
+            "scripts": {
+              "build": "node ./validate-artifact.mjs",
+              "start": "node app.js"
+            }
+          }
+          PKGJSON
 
           cat > /tmp/hostinger-deploy/validate-artifact.mjs <<PKGVALIDATE
-import fs from "node:fs";
-const sourceSha = "${GITHUB_SHA}";
-const files = [".output/nitro.json", ".output/server/index.mjs"];
-const dirs = [".output/server", ".output/public", ".output/public/assets"];
-for (const p of files) {
-  if (!fs.existsSync(p) || !fs.statSync(p).isFile()) {
-    console.error("[Hostinger] Missing artifact file: " + p);
-    process.exit(1);
-  }
-}
-for (const p of dirs) {
-  if (!fs.existsSync(p) || !fs.statSync(p).isDirectory()) {
-    console.error("[Hostinger] Missing artifact directory: " + p);
-    process.exit(1);
-  }
-}
-console.log("[Hostinger] Prebuilt Nitro artifact validated; no rebuild required");
-console.log("[Hostinger] Artifact built from source commit: " + sourceSha);
-PKGVALIDATE
+          import fs from "node:fs";
+          const sourceSha = "${GITHUB_SHA}";
+          const files = [".output/nitro.json", ".output/server/index.mjs"];
+          const dirs = [".output/server", ".output/public", ".output/public/assets"];
+          for (const p of files) {
+            if (!fs.existsSync(p) || !fs.statSync(p).isFile()) {
+              console.error("[Hostinger] Missing artifact file: " + p);
+              process.exit(1);
+            }
+          }
+          for (const p of dirs) {
+            if (!fs.existsSync(p) || !fs.statSync(p).isDirectory()) {
+              console.error("[Hostinger] Missing artifact directory: " + p);
+              process.exit(1);
+            }
+          }
+          console.log("[Hostinger] Prebuilt Nitro artifact validated; no rebuild required");
+          console.log("[Hostinger] Artifact built from source commit: " + sourceSha);
+          PKGVALIDATE
 
           # Publish an orphan branch so main remains clean and .output stays ignored there.
           git switch --orphan deploy
