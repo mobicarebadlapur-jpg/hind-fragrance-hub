@@ -16,6 +16,19 @@ export const listAdminPartners = createServerFn({ method: "GET" })
     return { ok: true as const, partners: data ?? [] };
   });
 
+export const listAdminProducts = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    if (!(await isAdmin(context.userId))) return { ok: false as const, error: "Forbidden", products: [] };
+    const db = await admin();
+    const { data, error } = await db
+      .from("products")
+      .select("id,sku,slug,name,category,short_description,description,image_url,price,sale_price,stock,commission_percent,featured,status,created_at,updated_at")
+      .order("created_at", { ascending: false });
+    if (error) return { ok: false as const, error: error.message, products: [] };
+    return { ok: true as const, products: data ?? [] };
+  });
+
 export const updateSetting = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
@@ -33,10 +46,7 @@ export const updateSetting = createServerFn({ method: "POST" })
 export const updatePartnerStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
-    z.object({
-      partnerId: z.string().uuid(),
-      status: z.enum(["pending", "active", "suspended", "cancelled"]),
-    }).parse(input),
+    z.object({ partnerId: z.string().uuid(), status: z.enum(["pending", "active", "suspended", "cancelled"]) }).parse(input),
   )
   .handler(async ({ data, context }) => {
     if (!(await isAdmin(context.userId))) return { ok: false as const, error: "Forbidden" };
@@ -52,20 +62,68 @@ export const updatePartnerStatus = createServerFn({ method: "POST" })
     if (error) return { ok: false as const, error: error.message };
 
     const role = data.status === "active" ? "partner" : "customer";
-    await db.from("profiles").update({ role }).eq("id", previous.user_id);
+    const { error: profileError } = await db.from("profiles").update({ role }).eq("id", previous.user_id);
+    if (profileError) return { ok: false as const, error: profileError.message };
+
+    await audit(context.userId, "partner.status", previous.partner_code ?? data.partnerId, previous.status, data.status);
+    await notify(previous.user_id, "Partner account updated", `Your partner account status is now ${data.status.replace("_", " ")}.`, "partner");
+    return { ok: true as const };
+  });
+
+const productInput = z.object({
+  id: z.string().uuid().optional(),
+  name: z.string().trim().min(2).max(120),
+  slug: z.string().trim().min(2).max(140).regex(/^[a-z0-9-]+$/),
+  sku: z.string().trim().min(2).max(40),
+  category: z.string().trim().min(2).max(80),
+  short_description: z.string().trim().max(200).optional().nullable(),
+  description: z.string().trim().max(2000).optional().nullable(),
+  image_url: z.string().trim().url().max(500).optional().nullable(),
+  price: z.number().min(0),
+  sale_price: z.number().min(0).nullable().optional(),
+  stock: z.number().int().min(0),
+  status: z.enum(["active", "draft", "archived"]),
+  featured: z.boolean(),
+  commission_percent: z.number().min(0).max(100).nullable().optional(),
+}).superRefine((value, ctx) => {
+  if (value.sale_price !== null && value.sale_price !== undefined && value.sale_price > value.price) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["sale_price"], message: "Sale price cannot exceed price." });
+  }
+});
+
+export const upsertProduct = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => productInput.parse(input))
+  .handler(async ({ data, context }) => {
+    if (!(await isAdmin(context.userId))) return { ok: false as const, error: "Forbidden" };
+    const db = await admin();
+    const payload = {
+      sku: data.sku,
+      slug: data.slug,
+      name: data.name,
+      category: data.category,
+      short_description: data.short_description ?? null,
+      description: data.description ?? null,
+      image_url: data.image_url ?? null,
+      price: data.price,
+      sale_price: data.sale_price ?? null,
+      stock: data.stock,
+      commission_percent: data.commission_percent ?? null,
+      featured: data.featured,
+      status: data.status,
+    };
+
+    const result = data.id
+      ? await db.from("products").update(payload).eq("id", data.id)
+      : await db.from("products").insert(payload);
+    if (result.error) return { ok: false as const, error: result.error.message };
 
     await audit(
       context.userId,
-      "partner.status",
-      previous.partner_code ?? data.partnerId,
-      previous.status,
-      data.status,
-    );
-    await notify(
-      previous.user_id,
-      "Partner account updated",
-      `Your partner account status is now ${data.status.replace("_", " ")}.`,
-      "partner",
+      data.id ? "product.update" : "product.create",
+      data.slug,
+      null,
+      { name: data.name, sku: data.sku, price: data.price, status: data.status },
     );
     return { ok: true as const };
   });
@@ -126,23 +184,6 @@ export const updatePayoutStatus = createServerFn({ method: "POST" })
     const partnerUser = (payout as { partners: { user_id: string } | null }).partners?.user_id;
     if (partnerUser) await notify(partnerUser, "Payout update", `Your payout of ₹${Number(payout.amount).toFixed(2)} is now ${data.status.replace("_", " ")}.`, "payout");
     await audit(context.userId, "payout.status", data.payoutId, payout.status, data.status);
-    return { ok: true as const };
-  });
-
-export const upsertProduct = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => z.object({
-    id: z.string().uuid().optional(), name: z.string().trim().min(2).max(120), slug: z.string().trim().regex(/^[a-z0-9-]+$/),
-    sku: z.string().trim().min(2).max(40), category: z.string().trim().min(2).max(40), short_description: z.string().trim().max(200).optional(),
-    description: z.string().trim().max(2000).optional(), image_url: z.string().trim().max(500).optional().nullable(), price: z.number().positive(),
-    sale_price: z.number().positive().nullable().optional(), stock: z.number().int().min(0), status: z.enum(["active", "inactive"]), featured: z.boolean(), commission_percent: z.number().min(0).max(80).nullable().optional(),
-  }).parse(input))
-  .handler(async ({ data, context }) => {
-    if (!(await isAdmin(context.userId))) return { ok: false as const, error: "Forbidden" };
-    const db = await admin();
-    const { error } = await db.from("products").upsert(data as never, { onConflict: "id" });
-    if (error) return { ok: false as const, error: error.message };
-    await audit(context.userId, data.id ? "product.update" : "product.create", data.slug, null, { name: data.name, price: data.price });
     return { ok: true as const };
   });
 
