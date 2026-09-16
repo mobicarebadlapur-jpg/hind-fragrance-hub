@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useCart } from "@/lib/cart";
 import { inr } from "@/lib/format";
-import { getReferralCode } from "@/lib/referral";
+import { getReferralCode, getReferralVisitorId } from "@/lib/referral";
 import { useSession } from "@/lib/session";
 import { placeOrder, payForOrder } from "@/lib/orders.functions";
 
@@ -42,6 +42,7 @@ function Checkout() {
   const [busy, setBusy] = useState(false);
   const [placed, setPlaced] = useState<{ orderNumber: string } | null>(null);
   const referral = typeof window !== "undefined" ? getReferralCode() : null;
+  const referralVisitorId = typeof window !== "undefined" ? getReferralVisitorId() : null;
   const shipping = subtotal >= 999 ? 0 : 59;
 
   useEffect(() => {
@@ -65,6 +66,7 @@ function Checkout() {
         data: {
           items: items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
           referralCode: referral,
+          referralVisitorId,
           ...form,
         },
       });
