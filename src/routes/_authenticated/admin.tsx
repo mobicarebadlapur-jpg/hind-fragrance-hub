@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useIsAdmin, useSession } from "@/lib/session";
-import { updatePartnerStatus } from "@/lib/admin.functions";
+import { listAdminPartners, updatePartnerStatus } from "@/lib/admin.functions";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   beforeLoad: async () => {
@@ -37,6 +37,7 @@ function AdminConsole() {
   const isAdmin = useIsAdmin();
   const { data: session } = useSession();
   const queryClient = useQueryClient();
+  const listPartners = useServerFn(listAdminPartners);
   const updateStatus = useServerFn(updatePartnerStatus);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -44,12 +45,9 @@ function AdminConsole() {
     queryKey: ["admin-partners"],
     enabled: isAdmin,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("partners")
-        .select("id,user_id,partner_code,referral_code,status,joined_at,created_at")
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return data ?? [];
+      const result = await listPartners();
+      if (!result.ok) throw new Error(result.error);
+      return result.partners;
     },
   });
 
