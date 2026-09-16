@@ -57,6 +57,33 @@ async function verifyRazorpaySignature(orderId: string, paymentId: string, signa
   return expected === signature;
 }
 
+/** Returns only the signed-in customer's own order, items, and payment ledger. */
+export const getCustomerOrderDetail = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ orderId: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const db = await admin();
+    const { data: order, error } = await db
+      .from("orders")
+      .select("*")
+      .eq("id", data.orderId)
+      .eq("customer_id", context.userId)
+      .maybeSingle();
+    if (error || !order) return { ok: false as const };
+
+    const [{ data: items }, { data: transactions }] = await Promise.all([
+      db.from("order_items").select("*").eq("order_id", order.id).order("created_at", { ascending: true }),
+      db.from("transactions").select("id,order_id,amount,currency,gateway,payment_type,gateway_order_id,gateway_payment_id,status,created_at,updated_at").eq("order_id", order.id).eq("user_id", context.userId).order("created_at", { ascending: true }),
+    ]);
+
+    return {
+      ok: true as const,
+      order,
+      items: items ?? [],
+      transactions: transactions ?? [],
+    };
+  });
+
 /** Prices, totals and referral attribution are resolved atomically by the database RPC. */
 export const placeOrder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
