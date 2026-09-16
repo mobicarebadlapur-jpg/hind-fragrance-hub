@@ -4,7 +4,6 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { admin, getSetting, notify } from "./platform.server";
 import type { MembershipSettings, PaymentSettings } from "./platform.server";
 
-/** Step 1 of the ₹199 membership: create the payment order server-side. */
 export const createMembershipOrder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -28,6 +27,8 @@ export const createMembershipOrder = createServerFn({ method: "POST" })
       .maybeSingle();
     if (existing?.status === "active")
       return { ok: false as const, error: "You already have an active partner membership." };
+    if (existing?.status === "pending")
+      return { ok: false as const, error: "Your partner application is already pending admin approval." };
 
     const gatewayOrderId = `${payment.demo_mode ? "demo" : "order"}_${crypto.randomUUID().replace(/-/g, "").slice(0, 18)}`;
     await db.from("transactions").insert({
@@ -45,16 +46,11 @@ export const createMembershipOrder = createServerFn({ method: "POST" })
       amount: membership.price,
       name: membership.name,
       demoMode: payment.demo_mode,
-      // Production: return the Razorpay order id + key_id here for Checkout.
       razorpayKeyId: process.env["RAZORPAY_KEY_ID"] ?? null,
     };
   });
 
-/**
- * Step 2: verify the payment server-side, then activate the partner.
- * Demo mode simulates a successful gateway callback; production verifies the
- * Razorpay signature with the server-side secret before activating.
- */
+/** Verify payment, then create a pending partner application. Admin approval activates it. */
 export const verifyMembershipPayment = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
@@ -80,70 +76,48 @@ export const verifyMembershipPayment = createServerFn({ method: "POST" })
       .eq("user_id", context.userId)
       .maybeSingle();
     if (!txn) return { ok: false as const, error: "Payment record not found." };
-    if (txn.status === "success" && txn.partner_id)
-      return { ok: false as const, error: "This payment has already been processed." };
+    if (txn.status === "success") return { ok: false as const, error: "This payment has already been processed." };
 
     if (!payment.demo_mode) {
-      // Production integration point: verify HMAC signature with RAZORPAY_KEY_SECRET.
       const secret = process.env["RAZORPAY_KEY_SECRET"];
       if (!secret || !data.signature)
         return { ok: false as const, error: "Payment verification is not configured yet." };
     }
-
-    const paymentId =
-      data.gatewayPaymentId ?? `pay_${crypto.randomUUID().replace(/-/g, "").slice(0, 18)}`;
 
     const { data: existing } = await db
       .from("partners")
       .select("*")
       .eq("user_id", context.userId)
       .maybeSingle();
+    if (existing?.status === "active")
+      return { ok: false as const, error: "You already have an active partner membership." };
+    if (existing?.status === "pending")
+      return { ok: false as const, error: "Your partner application is already pending admin approval." };
 
-    let partner = existing;
-    if (!partner) {
-      const { data: code } = await db.rpc("next_partner_code");
-      const partnerCode = (code as string) ?? `HFBP${Date.now()}`;
+    const paymentId = data.gatewayPaymentId ?? `pay_${crypto.randomUUID().replace(/-/g, "").slice(0, 18)}`;
+    const randomCode = () => `HF-P-${crypto.randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
+    const randomReferral = () => `HIND-${crypto.randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
+
+    let partner: { id: string; partner_code: string; referral_code: string; status: string } | null = null;
+    for (let attempt = 0; attempt < 3 && !partner; attempt++) {
       const { data: created, error } = await db
         .from("partners")
-        .insert({
-          user_id: context.userId,
-          partner_code: partnerCode,
-          referral_code: partnerCode,
-          status: "active",
-          membership_price: Number(txn.amount),
-          membership_date: new Date().toISOString(),
-          payment_id: paymentId,
-        })
-        .select("*")
+        .insert({ user_id: context.userId, partner_code: randomCode(), referral_code: randomReferral(), status: "pending" })
+        .select("id,partner_code,referral_code,status")
         .single();
-      if (error) return { ok: false as const, error: "Could not activate membership." };
-      partner = created;
-    } else {
-      const { data: updated } = await db
-        .from("partners")
-        .update({
-          status: "active",
-          membership_price: Number(txn.amount),
-          membership_date: new Date().toISOString(),
-          payment_id: paymentId,
-        })
-        .eq("id", partner.id)
-        .select("*")
-        .single();
-      partner = updated ?? partner;
+      if (!error) partner = created;
     }
+    if (!partner) return { ok: false as const, error: "Could not create partner application." };
 
     await db
       .from("transactions")
       .update({ status: "success", gateway_payment_id: paymentId, partner_id: partner.id })
       .eq("id", txn.id);
-    await db
-      .from("user_roles")
-      .upsert({ user_id: context.userId, role: "partner" }, { onConflict: "user_id,role" });
+
     await notify(
       context.userId,
-      "Partner membership activated",
-      `Welcome aboard! Your Partner ID is ${partner.partner_code}.`,
+      "Partner application submitted",
+      `Payment received. Your Partner ID is ${partner.partner_code}. Your application is pending admin approval.`,
       "membership",
     );
 
@@ -151,6 +125,7 @@ export const verifyMembershipPayment = createServerFn({ method: "POST" })
       ok: true as const,
       partnerCode: partner.partner_code,
       referralCode: partner.referral_code,
+      status: partner.status,
       paymentId,
     };
   });
