@@ -642,6 +642,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      confirm_paid_order: {
+        Args: {
+          _amount: number
+          _gateway: string
+          _gateway_payment_id: string
+          _order_id: string
+          _payment_id: string
+        }
+        Returns: {
+          order_number: string
+        }[]
+      }
       get_available_commission: {
         Args: { _partner_id: string }
         Returns: number
