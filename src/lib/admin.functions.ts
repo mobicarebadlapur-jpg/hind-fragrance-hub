@@ -3,6 +3,19 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { admin, audit, isAdmin, notify } from "./platform.server";
 
+export const listAdminPartners = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    if (!(await isAdmin(context.userId))) return { ok: false as const, error: "Forbidden", partners: [] };
+    const db = await admin();
+    const { data, error } = await db
+      .from("partners")
+      .select("id,user_id,partner_code,referral_code,status,joined_at,created_at")
+      .order("created_at", { ascending: false });
+    if (error) return { ok: false as const, error: error.message, partners: [] };
+    return { ok: true as const, partners: data ?? [] };
+  });
+
 export const updateSetting = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
