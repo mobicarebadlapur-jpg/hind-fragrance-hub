@@ -27,13 +27,13 @@ function AdminRefundsPage() {
   const { data, isLoading, refetch } = useQuery({ queryKey: ["admin-refunds"], queryFn: () => list() });
 
   return (
-    <DashboardShell title="Refund requests" description="Review customer cancellation and refund requests.">
+    <DashboardShell title="Refund requests" subtitle="Review customer cancellation and refund requests.">
       <div className="mb-4 flex flex-wrap justify-between gap-2">
         <Button variant="outline" size="sm" onClick={() => window.location.assign("/admin")}>Back to admin</Button>
         <Button variant="outline" onClick={() => refetch()} disabled={isLoading}><RefreshCw className="mr-2 h-4 w-4" />Refresh</Button>
       </div>
       {!data?.ok || !data.refunds.length ? (
-        <EmptyState icon={RotateCcw} title="No pending refunds" description="New customer refund requests will appear here." />
+        <EmptyState message="No pending refunds. New customer refund requests will appear here." />
       ) : (
         <div className="space-y-4">
           {data.refunds.map((refund: any) => (
