@@ -24,6 +24,7 @@ const checkoutSchema = z.object({
       }
     }),
   referralCode: z.string().trim().max(32).optional().nullable(),
+  referralVisitorId: z.string().uuid().optional().nullable(),
   shippingName: z.string().trim().min(2).max(100),
   mobile: z.string().trim().regex(/^[0-9]{10}$/),
   address: z.string().trim().min(5).max(300),
@@ -108,6 +109,7 @@ export const placeOrder = createServerFn({ method: "POST" })
       .insert({
         customer_id: context.userId,
         referral_code: referralCode,
+        referral_visitor_id: data.referralVisitorId ?? null,
         partner_id: partnerId,
         subtotal,
         shipping,
