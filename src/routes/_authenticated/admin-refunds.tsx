@@ -1,3 +1,4 @@
+import * as React from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -5,8 +6,6 @@ import { RefreshCw, RotateCcw, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { DashboardShell, EmptyState, StatusPill } from "@/components/dash/DashboardShell";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { admin } from "@/lib/platform.server";
 import { listAdminRefundRequests, processAdminRefund } from "@/lib/refunds.functions";
 import { inr, shortDate } from "@/lib/format";
 import { supabase } from "@/integrations/supabase/client";
@@ -63,7 +62,7 @@ function RefundCard({ refund, onProcess }: { refund: any; onProcess: (decision: 
         <div className="text-right"><p className="text-lg font-semibold">{inr(refund.refund_requested_amount ?? refund.total)}</p><p className="text-xs text-muted-foreground">Full order refund</p></div>
       </div>
       <div className="mt-4 rounded-lg bg-muted/50 p-3 text-sm"><strong>Reason:</strong> {refund.refund_reason || "No reason provided"}</div>
-      <Textarea className="mt-4" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional admin note" maxLength={300} />
+      <textarea className="mt-4 min-h-20 w-full rounded-md border bg-background p-3 text-sm" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional admin note" maxLength={300} />
       <div className="mt-4 flex flex-wrap gap-2">
         <Button onClick={() => onProcess("approved", note)}><RotateCcw className="mr-2 h-4 w-4" />Approve & refund</Button>
         <Button variant="outline" onClick={() => onProcess("rejected", note)}><XCircle className="mr-2 h-4 w-4" />Reject</Button>
