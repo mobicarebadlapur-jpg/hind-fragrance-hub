@@ -18,23 +18,27 @@ BEGIN
      AND OLD.status IN ('paid', 'processing', 'shipped', 'delivered')
      AND NEW.stock_released_at IS NULL THEN
 
-    -- Lock the affected products in deterministic order to avoid cross-order
-    -- deadlocks when multiple reversals touch the same products concurrently.
+    -- Aggregate in a subquery so PostgreSQL can lock product rows safely.
+    -- Product ids are processed in deterministic order to reduce deadlocks.
     FOR item IN
-      SELECT oi.product_id, SUM(oi.quantity)::int AS quantity
-      FROM public.order_items oi
-      WHERE oi.order_id = NEW.id
-        AND oi.product_id IS NOT NULL
-      GROUP BY oi.product_id
-      ORDER BY oi.product_id
-      FOR UPDATE
+      SELECT p.id, q.quantity
+      FROM public.products p
+      JOIN (
+        SELECT product_id, SUM(quantity)::int AS quantity
+        FROM public.order_items
+        WHERE order_id = NEW.id
+          AND product_id IS NOT NULL
+        GROUP BY product_id
+      ) q ON q.product_id = p.id
+      ORDER BY p.id
+      FOR UPDATE OF p
     LOOP
       UPDATE public.products
       SET stock = stock + item.quantity
-      WHERE id = item.product_id;
+      WHERE id = item.id;
 
       IF NOT FOUND THEN
-        RAISE EXCEPTION 'Cannot restore stock: product % no longer exists.', item.product_id;
+        RAISE EXCEPTION 'Cannot restore stock: product % no longer exists.', item.id;
       END IF;
     END LOOP;
 
