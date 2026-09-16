@@ -8,7 +8,21 @@ const checkoutSchema = z.object({
   items: z
     .array(z.object({ productId: z.string().uuid(), quantity: z.number().int().min(1).max(20) }))
     .min(1)
-    .max(30),
+    .max(30)
+    .superRefine((items, ctx) => {
+      const ids = new Set<string>();
+      for (const item of items) {
+        if (ids.has(item.productId)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["items"],
+            message: "Duplicate products are not allowed in checkout.",
+          });
+          break;
+        }
+        ids.add(item.productId);
+      }
+    }),
   referralCode: z.string().trim().max(32).optional().nullable(),
   shippingName: z.string().trim().min(2).max(100),
   mobile: z.string().trim().regex(/^[0-9]{10}$/),
@@ -29,25 +43,39 @@ export const placeOrder = createServerFn({ method: "POST" })
       .from("products")
       .select("id,name,price,sale_price,stock,status")
       .in("id", ids);
-    if (!products || products.length === 0)
-      return { ok: false as const, error: "Products are no longer available." };
 
-    const lines = data.items.flatMap((item) => {
+    // Never silently drop cart lines. A client must not be able to turn an
+    // unavailable/missing product into a smaller, valid order.
+    if (!products || products.length !== ids.length) {
+      return { ok: false as const, error: "One or more products are no longer available." };
+    }
+
+    const lines = data.items.map((item) => {
       const product = products.find((p) => p.id === item.productId);
-      if (!product || product.status !== "active") return [];
+      if (!product || product.status !== "active") return null;
       const unit = Number(product.sale_price ?? product.price);
-      return [{
+      return {
         product_id: product.id,
         product_name: product.name,
         unit_price: unit,
         quantity: item.quantity,
         line_total: Number((unit * item.quantity).toFixed(2)),
-      }];
+      };
     });
-    if (lines.length === 0)
-      return { ok: false as const, error: "None of the items in your cart are available." };
 
-    const subtotal = Number(lines.reduce((s, l) => s + l.line_total, 0).toFixed(2));
+    if (lines.some((line) => line === null)) {
+      return { ok: false as const, error: "One or more products are no longer available." };
+    }
+
+    const safeLines = lines as Array<{
+      product_id: string;
+      product_name: string;
+      unit_price: number;
+      quantity: number;
+      line_total: number;
+    }>;
+
+    const subtotal = Number(safeLines.reduce((s, l) => s + l.line_total, 0).toFixed(2));
     const shipping = subtotal >= 999 ? 0 : 59;
     const total = Number((subtotal + shipping).toFixed(2));
 
@@ -92,7 +120,7 @@ export const placeOrder = createServerFn({ method: "POST" })
 
     const { error: itemsError } = await db
       .from("order_items")
-      .insert(lines.map((l) => ({ ...l, order_id: order.id })));
+      .insert(safeLines.map((l) => ({ ...l, order_id: order.id })));
     if (itemsError) {
       await db.from("orders").delete().eq("id", order.id);
       return { ok: false as const, error: "Could not save the items in your order." };
