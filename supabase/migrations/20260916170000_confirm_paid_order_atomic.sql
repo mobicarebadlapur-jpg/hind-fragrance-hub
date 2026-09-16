@@ -17,7 +17,6 @@ AS $$
 DECLARE
   o public.orders%ROWTYPE;
   item record;
-  existing_tx public.transactions%ROWTYPE;
 BEGIN
   IF auth.uid() IS NULL THEN
     RAISE EXCEPTION 'Authentication required.';
@@ -64,14 +63,29 @@ BEGIN
     RAISE EXCEPTION 'Payment transaction already exists for this order.';
   END IF;
 
+  -- Reject malformed order lines before touching stock.
+  IF NOT EXISTS (SELECT 1 FROM public.order_items WHERE order_id = o.id) THEN
+    RAISE EXCEPTION 'Order has no items.';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.order_items
+    WHERE order_id = o.id AND product_id IS NULL
+  ) THEN
+    RAISE EXCEPTION 'Order contains an invalid product line.';
+  END IF;
+
   -- Lock every product involved in the order in deterministic id order.
-  -- This serializes competing orders and prevents overselling.
+  -- The aggregate happens in a subquery so PostgreSQL can lock the product rows
+  -- without combining GROUP BY and FOR UPDATE in the same SELECT level.
   FOR item IN
-    SELECT p.id, p.stock, p.status, SUM(oi.quantity)::int AS quantity
-    FROM public.order_items oi
-    JOIN public.products p ON p.id = oi.product_id
-    WHERE oi.order_id = o.id
-    GROUP BY p.id, p.stock, p.status
+    SELECT p.id, p.stock, p.status, q.quantity
+    FROM public.products p
+    JOIN (
+      SELECT product_id, SUM(quantity)::int AS quantity
+      FROM public.order_items
+      WHERE order_id = o.id
+      GROUP BY product_id
+    ) q ON q.product_id = p.id
     ORDER BY p.id
     FOR UPDATE OF p
   LOOP
@@ -86,11 +100,6 @@ BEGIN
     SET stock = stock - item.quantity
     WHERE id = item.id;
   END LOOP;
-
-  -- Every order must have at least one persisted line before payment can settle.
-  IF NOT EXISTS (SELECT 1 FROM public.order_items WHERE order_id = o.id) THEN
-    RAISE EXCEPTION 'Order has no items.';
-  END IF;
 
   UPDATE public.orders
   SET status = 'paid',
