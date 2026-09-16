@@ -16,29 +16,22 @@ export function SiteFooter() {
         <div>
           <h3 className="eyebrow">Explore</h3>
           <ul className="mt-4 space-y-2 text-sm text-ink-foreground/75">
-            <li>
-              <Link to="/shop">Shop all</Link>
-            </li>
-            <li>
-              <Link to="/business-partner">Business Partner</Link>
-            </li>
-            <li>
-              <Link to="/join">Join for ₹199</Link>
-            </li>
-            <li>
-              <Link to="/auth">Login</Link>
-            </li>
+            <li><Link to="/shop">Shop all</Link></li>
+            <li><Link to="/business-partner">Business Partner</Link></li>
+            <li><Link to="/join">Join for ₹199</Link></li>
+            <li><Link to="/auth">Login</Link></li>
           </ul>
         </div>
         <div>
-          <h3 className="eyebrow">Contact</h3>
+          <h3 className="eyebrow">Legal & contact</h3>
           <ul className="mt-4 space-y-2 text-sm text-ink-foreground/75">
             <li>support@hindfragrance.com</li>
             <li>+91 90000 00000</li>
             <li>India</li>
-            <li>
-              <Link to="/demo">Demo access</Link>
-            </li>
+            <li><Link to="/privacy">Privacy Policy</Link></li>
+            <li><Link to="/terms">Terms & Conditions</Link></li>
+            <li><Link to="/refund">Return & Refund Policy</Link></li>
+            <li><Link to="/shipping">Shipping Policy</Link></li>
           </ul>
         </div>
       </div>
