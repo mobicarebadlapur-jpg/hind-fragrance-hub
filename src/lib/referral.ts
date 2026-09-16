@@ -73,7 +73,7 @@ async function logReferralClick(code: string, landingPage: string, visitorId: st
     partner_id: partner?.id ?? null,
     landing_page: landingPage,
     visitor_id: visitorId,
-  });
+  } as never);
 }
 
 export function referralUrl(code: string, path = "/"): string {
