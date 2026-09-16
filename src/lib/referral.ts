@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 
 const KEY = "hf_referral";
+const VISITOR_KEY = "hf_referral_visitor";
 
 type StoredReferral = { code: string; at: number; expires: number };
 
@@ -10,6 +11,7 @@ export function captureReferral(search: string, landingPage: string, cookieDays 
   const code = new URLSearchParams(search).get("ref");
   if (!code) return;
   const existing = readReferralRecord();
+  const visitorId = getReferralVisitorId();
   const payload: StoredReferral = {
     code: code.toUpperCase(),
     at: Date.now(),
@@ -19,7 +21,7 @@ export function captureReferral(search: string, landingPage: string, cookieDays 
   window.localStorage.setItem(KEY, JSON.stringify(payload));
   document.cookie = `hf_ref=${payload.code}; path=/; max-age=${cookieDays * 86400}; SameSite=Lax`;
   if (existing?.code === payload.code && Date.now() - existing.at < 60_000) return;
-  void logReferralClick(payload.code, landingPage);
+  void logReferralClick(payload.code, landingPage, visitorId);
 }
 
 function readReferralRecord(): StoredReferral | null {
@@ -42,11 +44,25 @@ export function getReferralCode(): string | null {
   return readReferralRecord()?.code ?? null;
 }
 
+/** Stable, browser-local identifier used only to bind a click to later checkout attribution. */
+export function getReferralVisitorId(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const existing = window.localStorage.getItem(VISITOR_KEY);
+    if (existing) return existing;
+    const id = crypto.randomUUID();
+    window.localStorage.setItem(VISITOR_KEY, id);
+    return id;
+  } catch {
+    return null;
+  }
+}
+
 export function clearReferral() {
   if (typeof window !== "undefined") window.localStorage.removeItem(KEY);
 }
 
-async function logReferralClick(code: string, landingPage: string) {
+async function logReferralClick(code: string, landingPage: string, visitorId: string | null) {
   const { data: partner } = await supabase
     .from("partners")
     .select("id")
@@ -56,6 +72,7 @@ async function logReferralClick(code: string, landingPage: string) {
     referral_code: code,
     partner_id: partner?.id ?? null,
     landing_page: landingPage,
+    visitor_id: visitorId,
   });
 }
 
