@@ -40,6 +40,7 @@ export const placeOrder = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const db = await admin();
     const { data: result, error } = await db.rpc("create_order", {
+      _customer_id: context.userId,
       _items: data.items.map((item) => ({
         product_id: item.productId,
         quantity: item.quantity,
