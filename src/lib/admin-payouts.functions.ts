@@ -28,23 +28,19 @@ export const updateAdminPayout = createServerFn({ method: "POST" })
     if (!payout) return { ok: false as const, error: "Payout not found." };
     if (payout.status === "paid" && data.status !== "paid") return { ok: false as const, error: "Paid payouts cannot be moved backwards." };
 
-    const patch: Record<string, unknown> = { status: data.status, notes: data.notes ?? null };
-    if (["processing", "paid"].includes(data.status)) patch.processed_at = new Date().toISOString();
-    const { error } = await db.from("payouts").update(patch).eq("id", data.payoutId);
-    if (error) return { ok: false as const, error: error.message };
-
     if (data.status === "paid") {
-      const { data: available } = await db.from("commissions").select("id,amount").eq("partner_id", payout.partner_id).eq("status", "available").order("created_at", { ascending: true });
-      let remaining = Number(payout.amount);
-      for (const commission of available ?? []) {
-        if (remaining <= 0) break;
-        const amount = Number(commission.amount);
-        if (amount <= remaining) {
-          const { error: commissionError } = await db.from("commissions").update({ status: "paid" }).eq("id", commission.id).eq("status", "available");
-          if (!commissionError) remaining -= amount;
-        }
-      }
-      if (remaining > 0.009) return { ok: false as const, error: "Payout marked paid but available commission balance was insufficient; review this payout." };
+      const { error } = await (db as any).rpc("set_payout_paid_atomically", { _payout_id: data.payoutId });
+      if (error) return { ok: false as const, error: error.message };
+    } else {
+      const patch: Record<string, unknown> = { status: data.status, notes: data.notes ?? null };
+      if (["processing"].includes(data.status)) patch.processed_at = new Date().toISOString();
+      const { error } = await db.from("payouts").update(patch).eq("id", data.payoutId);
+      if (error) return { ok: false as const, error: error.message };
+    }
+
+    if (data.notes !== undefined && data.status === "paid") {
+      const { error } = await db.from("payouts").update({ notes: data.notes ?? null }).eq("id", data.payoutId).eq("status", "paid");
+      if (error) return { ok: false as const, error: error.message };
     }
 
     const partnerUser = (payout.partners as { user_id: string } | null)?.user_id;
