@@ -1,7 +1,8 @@
 -- Secure checkout writes: clients may read their orders, but cannot forge orders or line items directly.
--- The RPC below validates products, prices, quantities, totals and referral attribution atomically.
+-- The RPC is callable only by service_role; the application server passes the already-authenticated customer id.
 
 CREATE OR REPLACE FUNCTION public.create_order(
+  _customer_id uuid,
   _items jsonb,
   _referral_code text,
   _referral_visitor_id uuid,
@@ -18,15 +19,14 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-  actor uuid := auth.uid();
   item_count integer;
   subtotal numeric;
   shipping numeric;
   computed_total numeric;
   new_order_id uuid;
 BEGIN
-  IF actor IS NULL THEN
-    RAISE EXCEPTION 'Authentication required.';
+  IF _customer_id IS NULL THEN
+    RAISE EXCEPTION 'Customer is required.';
   END IF;
 
   IF jsonb_typeof(_items) <> 'array' THEN
@@ -83,7 +83,7 @@ BEGIN
 
   INSERT INTO public.profiles (id, full_name, mobile, address, city, state, pincode)
   VALUES (
-    actor,
+    _customer_id,
     btrim(_shipping_name),
     _mobile,
     btrim(_address),
@@ -110,7 +110,7 @@ BEGIN
     status
   )
   VALUES (
-    actor,
+    _customer_id,
     NULLIF(btrim(_referral_code), ''),
     _referral_visitor_id,
     NULL,
@@ -146,8 +146,8 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.create_order(jsonb, text, uuid, text, text, text, text, text, text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.create_order(jsonb, text, uuid, text, text, text, text, text, text) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.create_order(uuid, jsonb, text, uuid, text, text, text, text, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.create_order(uuid, jsonb, text, uuid, text, text, text, text, text, text) TO service_role;
 
 -- Do not allow a browser client to forge financial order rows or line items.
 REVOKE INSERT, UPDATE, DELETE ON public.orders FROM authenticated;
@@ -155,5 +155,5 @@ REVOKE INSERT, UPDATE, DELETE ON public.order_items FROM authenticated;
 REVOKE ALL ON public.orders FROM anon;
 REVOKE ALL ON public.order_items FROM anon;
 
-COMMENT ON FUNCTION public.create_order(jsonb, text, uuid, text, text, text, text, text, text)
-IS 'Atomically validates checkout inputs, resolves prices/totals and referral attribution, then creates the order and its line items.';
+COMMENT ON FUNCTION public.create_order(uuid, jsonb, text, uuid, text, text, text, text, text, text)
+IS 'Atomically validates checkout inputs, resolves prices/totals and referral attribution, then creates the order and its line items. Callable only by the trusted server.';
