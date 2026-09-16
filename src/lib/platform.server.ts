@@ -49,9 +49,9 @@ export async function notify(userId: string, title: string, body: string, type =
 export async function isAdmin(userId: string): Promise<boolean> {
   const db = await admin();
   const { data } = await db
-    .from("user_roles")
+    .from("profiles")
     .select("role")
-    .eq("user_id", userId)
+    .eq("id", userId)
     .eq("role", "admin")
     .maybeSingle();
   return Boolean(data);
