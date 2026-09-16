@@ -8,8 +8,9 @@ type StoredReferral = { code: string; at: number; expires: number };
 /** Persist the referral code from ?ref= for the configured cookie window. */
 export function captureReferral(search: string, landingPage: string, cookieDays = 30) {
   if (typeof window === "undefined") return;
-  const code = new URLSearchParams(search).get("ref");
+  const code = new URLSearchParams(search).get("ref")?.trim();
   if (!code) return;
+
   const existing = readReferralRecord();
   const visitorId = getReferralVisitorId();
   const payload: StoredReferral = {
@@ -17,9 +18,11 @@ export function captureReferral(search: string, landingPage: string, cookieDays 
     at: Date.now(),
     expires: Date.now() + cookieDays * 86400000,
   };
+
   // Default attribution rule: last valid click wins.
   window.localStorage.setItem(KEY, JSON.stringify(payload));
   document.cookie = `hf_ref=${payload.code}; path=/; max-age=${cookieDays * 86400}; SameSite=Lax`;
+
   if (existing?.code === payload.code && Date.now() - existing.at < 60_000) return;
   void logReferralClick(payload.code, landingPage, visitorId);
 }
@@ -30,7 +33,7 @@ function readReferralRecord(): StoredReferral | null {
     const raw = window.localStorage.getItem(KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredReferral;
-    if (parsed.expires < Date.now()) {
+    if (!parsed.code || parsed.expires < Date.now()) {
       window.localStorage.removeItem(KEY);
       return null;
     }
@@ -63,21 +66,16 @@ export function clearReferral() {
 }
 
 async function logReferralClick(code: string, landingPage: string, visitorId: string | null) {
-  const { data: partner } = await supabase
-    .from("partners")
-    .select("id")
-    .eq("referral_code", code)
-    .maybeSingle();
-  await supabase.from("referral_clicks").insert({
-    referral_code: code,
-    partner_id: partner?.id ?? null,
-    landing_page: landingPage,
-    visitor_id: visitorId,
+  await supabase.rpc("track_referral_click" as never, {
+    p_referral_code: code,
+    p_landing_page: landingPage,
+    p_visitor_id: visitorId,
   } as never);
 }
 
 export function referralUrl(code: string, path = "/"): string {
   const origin =
     typeof window !== "undefined" ? window.location.origin : "https://hindfragrance.com";
-  return `${origin}${path}?ref=${code}`;
+  const separator = path.includes("?") ? "&" : "?";
+  return `${origin}${path}${separator}ref=${encodeURIComponent(code)}`;
 }
