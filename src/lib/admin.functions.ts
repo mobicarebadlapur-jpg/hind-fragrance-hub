@@ -31,7 +31,6 @@ export const upsertAdminProduct = createServerFn({ method: "POST" }).middleware(
   return { ok: true as const };
 });
 
-// Backward-compatible name used by the existing admin route.
 export const upsertProduct = upsertAdminProduct;
 
 export const updateSetting = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((input: unknown) => z.object({ key: z.string().min(2).max(40), value: z.record(z.unknown()) }).parse(input)).handler(async ({ data, context }) => {
@@ -46,8 +45,28 @@ export const updatePartnerStatus = createServerFn({ method: "POST" }).middleware
   await audit(context.userId, "partner.status", previous.partner_code ?? data.partnerId, previous.status, data.status); await notify(previous.user_id, "Partner account updated", `Your partner account status is now ${data.status.replace("_", " ")}.`, "partner"); return { ok: true as const };
 });
 
-export const updateOrderStatus = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((input: unknown) => z.object({ orderId: z.string().uuid(), status: z.enum(["created", "payment_pending", "paid", "processing", "shipped", "delivered", "cancelled", "refunded", "returned"]) }).parse(input)).handler(async ({ data, context }) => {
-  if (!(await isAdmin(context.userId))) return { ok: false as const, error: "Forbidden" }; const db = await admin(); const { data: previous } = await db.from("orders").select("status,order_number").eq("id", data.orderId).maybeSingle(); const { error } = await db.from("orders").update({ status: data.status }).eq("id", data.orderId); if (error) return { ok: false as const, error: error.message }; if (data.status === "delivered") await db.from("commissions").update({ status: "approved" }).eq("order_id", data.orderId).eq("status", "pending"); await audit(context.userId, "order.status", previous?.order_number ?? data.orderId, previous?.status ?? null, data.status); return { ok: true as const };
+export const listAdminOrders = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth]).handler(async ({ context }) => {
+  if (!(await isAdmin(context.userId))) return { ok: false as const, error: "Forbidden", orders: [] };
+  const db = await admin();
+  const { data, error } = await db.from("orders").select("id,order_number,customer_id,partner_id,referral_code,subtotal,discount,tax,shipping,total,payment_id,status,shipping_name,mobile,address,city,state,pincode,created_at,updated_at,order_items(id,product_name,quantity,unit_price,line_total),commissions(id,amount,status,partner_id)").order("created_at", { ascending: false });
+  if (error) return { ok: false as const, error: error.message, orders: [] };
+  return { ok: true as const, orders: data ?? [] };
+});
+
+export const updateOrderStatus = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((input: unknown) => z.object({ orderId: z.string().uuid(), status: z.enum(["created", "payment_pending", "paid", "processing", "shipped", "delivered", "cancelled", "refunded"]) }).parse(input)).handler(async ({ data, context }) => {
+  if (!(await isAdmin(context.userId))) return { ok: false as const, error: "Forbidden" };
+  const db = await admin();
+  const { data: previous } = await db.from("orders").select("status,order_number,customer_id").eq("id", data.orderId).maybeSingle();
+  if (!previous) return { ok: false as const, error: "Order not found." };
+  const { error } = await db.from("orders").update({ status: data.status }).eq("id", data.orderId);
+  if (error) return { ok: false as const, error: error.message };
+  if (data.status === "delivered") await db.from("commissions").update({ status: "approved" }).eq("order_id", data.orderId).eq("status", "pending");
+  if (data.status === "cancelled" || data.status === "refunded") {
+    await db.from("commissions").update({ status: "cancelled" }).eq("order_id", data.orderId).in("status", ["pending", "approved"]);
+  }
+  await audit(context.userId, "order.status", previous.order_number, previous.status, data.status);
+  await notify(previous.customer_id, "Order status updated", `Order ${previous.order_number} is now ${data.status.replace("_", " ")}.`, "order");
+  return { ok: true as const };
 });
 
 export const updateCommissionStatus = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((input: unknown) => z.object({ commissionId: z.string().uuid(), status: z.enum(["pending", "approved", "available", "paid", "cancelled", "reversed"]) }).parse(input)).handler(async ({ data, context }) => {
