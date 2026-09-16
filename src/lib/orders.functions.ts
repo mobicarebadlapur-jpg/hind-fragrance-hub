@@ -33,100 +33,36 @@ const checkoutSchema = z.object({
   pincode: z.string().trim().regex(/^[0-9]{6}$/),
 });
 
-/** Prices, totals and referral attribution are resolved server-side. */
+/** Prices, totals and referral attribution are resolved atomically by the database RPC. */
 export const placeOrder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => checkoutSchema.parse(input))
   .handler(async ({ data, context }) => {
     const db = await admin();
-    const ids = data.items.map((i) => i.productId);
-    const { data: products } = await db
-      .from("products")
-      .select("id,name,price,sale_price,stock,status")
-      .in("id", ids);
-
-    if (!products || products.length !== ids.length) {
-      return { ok: false as const, error: "One or more products are no longer available." };
-    }
-
-    const lines = data.items.map((item) => {
-      const product = products.find((p) => p.id === item.productId);
-      if (!product || product.status !== "active") return null;
-      const unit = Number(product.sale_price ?? product.price);
-      return {
-        product_id: product.id,
-        product_name: product.name,
-        unit_price: unit,
+    const { data: result, error } = await db.rpc("create_order", {
+      _items: data.items.map((item) => ({
+        product_id: item.productId,
         quantity: item.quantity,
-        line_total: Number((unit * item.quantity).toFixed(2)),
-      };
+      })),
+      _referral_code: data.referralCode ?? null,
+      _referral_visitor_id: data.referralVisitorId ?? null,
+      _shipping_name: data.shippingName,
+      _mobile: data.mobile,
+      _address: data.address,
+      _city: data.city,
+      _state: data.state,
+      _pincode: data.pincode,
     });
 
-    if (lines.some((line) => line === null)) {
-      return { ok: false as const, error: "One or more products are no longer available." };
+    const order = result?.[0];
+    if (error || !order) {
+      const message = error?.message?.toLowerCase().includes("no longer available")
+        ? "One or more products are no longer available."
+        : "Could not create your order.";
+      return { ok: false as const, error: message };
     }
 
-    const safeLines = lines as Array<{
-      product_id: string;
-      product_name: string;
-      unit_price: number;
-      quantity: number;
-      line_total: number;
-    }>;
-
-    const subtotal = Number(safeLines.reduce((s, l) => s + l.line_total, 0).toFixed(2));
-    const shipping = subtotal >= 999 ? 0 : 59;
-    const total = Number((subtotal + shipping).toFixed(2));
-
-    let partnerId: string | null = null;
-    let referralCode: string | null = null;
-    if (data.referralCode) {
-      const { data: partner } = await db
-        .from("partners")
-        .select("id,user_id,status")
-        .eq("referral_code", data.referralCode.toUpperCase())
-        .maybeSingle();
-      if (partner && partner.status === "active" && partner.user_id !== context.userId) {
-        partnerId = partner.id;
-        referralCode = data.referralCode.toUpperCase();
-      }
-    }
-
-    await db.from("profiles").upsert({
-      id: context.userId,
-      full_name: data.shippingName,
-      mobile: data.mobile,
-      address: data.address,
-      city: data.city,
-      state: data.state,
-      pincode: data.pincode,
-    });
-
-    const { data: order, error } = await db
-      .from("orders")
-      .insert({
-        customer_id: context.userId,
-        referral_code: referralCode,
-        referral_visitor_id: data.referralVisitorId ?? null,
-        partner_id: partnerId,
-        subtotal,
-        shipping,
-        total,
-        status: "payment_pending",
-      } as never)
-      .select("*")
-      .single();
-    if (error || !order) return { ok: false as const, error: "Could not create your order." };
-
-    const { error: itemsError } = await db
-      .from("order_items")
-      .insert(safeLines.map((l) => ({ ...l, order_id: order.id })));
-    if (itemsError) {
-      await db.from("orders").delete().eq("id", order.id);
-      return { ok: false as const, error: "Could not save the items in your order." };
-    }
-
-    return { ok: true as const, orderId: order.id, orderNumber: order.order_number, total };
+    return { ok: true as const, orderId: order.order_id, orderNumber: order.order_number, total: order.total };
   });
 
 /** Confirms payment for an order; demo mode simulates a successful gateway. */
