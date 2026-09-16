@@ -24,21 +24,54 @@ export const Route = createFileRoute("/checkout")({
   component: Checkout,
 });
 
+type RazorpayResponse = { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string };
+type RazorpayOptions = {
+  key: string;
+  amount: number;
+  currency: string;
+  name: string;
+  description: string;
+  order_id: string;
+  prefill?: { name?: string; contact?: string };
+  theme?: { color?: string };
+  handler: (response: RazorpayResponse) => void | Promise<void>;
+  modal?: { ondismiss?: () => void };
+};
+type RazorpayInstance = { open: () => void };
+
+declare global {
+  interface Window {
+    Razorpay?: new (options: RazorpayOptions) => RazorpayInstance;
+  }
+}
+
+async function loadRazorpayCheckout() {
+  if (window.Razorpay) return;
+  await new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>('script[data-razorpay-checkout="true"]');
+    if (existing) {
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () => reject(new Error("Could not load Razorpay Checkout.")), { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    script.dataset.razorpayCheckout = "true";
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Could not load Razorpay Checkout."));
+    document.body.appendChild(script);
+  });
+  if (!window.Razorpay) throw new Error("Razorpay Checkout is unavailable.");
+}
+
 function Checkout() {
   const { items, subtotal, clear } = useCart();
   const { data: session, isPending } = useSession();
   const navigate = useNavigate();
   const submitOrder = useServerFn(placeOrder);
   const pay = useServerFn(payForOrder);
-
-  const [form, setForm] = useState({
-    shippingName: "",
-    mobile: "",
-    address: "",
-    city: "",
-    state: "",
-    pincode: "",
-  });
+  const [form, setForm] = useState({ shippingName: "", mobile: "", address: "", city: "", state: "", pincode: "" });
   const [busy, setBusy] = useState(false);
   const [placed, setPlaced] = useState<{ orderNumber: string } | null>(null);
   const referral = typeof window !== "undefined" ? getReferralCode() : null;
@@ -47,100 +80,103 @@ function Checkout() {
 
   useEffect(() => {
     const profile = session?.profile;
-    if (profile)
-      setForm((f) => ({
-        shippingName: f.shippingName || (profile.full_name ?? ""),
-        mobile: f.mobile || (profile.mobile ?? ""),
-        address: f.address || (profile.address ?? ""),
-        city: f.city || (profile.city ?? ""),
-        state: f.state || (profile.state ?? ""),
-        pincode: f.pincode || (profile.pincode ?? ""),
-      }));
+    if (profile) setForm((f) => ({
+      shippingName: f.shippingName || (profile.full_name ?? ""),
+      mobile: f.mobile || (profile.mobile ?? ""),
+      address: f.address || (profile.address ?? ""),
+      city: f.city || (profile.city ?? ""),
+      state: f.state || (profile.state ?? ""),
+      pincode: f.pincode || (profile.pincode ?? ""),
+    }));
   }, [session?.profile]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     try {
-      const created = await submitOrder({
-        data: {
-          items: items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
-          referralCode: referral,
-          referralVisitorId,
-          ...form,
+      const created = await submitOrder({ data: { items: items.map((i) => ({ productId: i.productId, quantity: i.quantity })), referralCode: referral, referralVisitorId, ...form } });
+      if (!created.ok) { toast.error(created.error); return; }
+
+      if (created.demoMode) {
+        const paid = await pay({ data: { orderId: created.orderId, gatewayOrderId: created.gatewayOrderId } });
+        if (!paid.ok) { toast.error(paid.error); return; }
+        clear();
+        setPlaced({ orderNumber: paid.orderNumber });
+        return;
+      }
+
+      if (!created.razorpayKeyId) throw new Error("Razorpay public key is not configured.");
+      await loadRazorpayCheckout();
+      const Razorpay = window.Razorpay;
+      if (!Razorpay) throw new Error("Razorpay Checkout is unavailable.");
+
+      const razorpay = new Razorpay({
+        key: created.razorpayKeyId,
+        amount: Math.round(created.total * 100),
+        currency: "INR",
+        name: "Hind Fragrance",
+        description: `Order ${created.orderNumber}`,
+        order_id: created.gatewayOrderId,
+        prefill: { name: form.shippingName, contact: form.mobile },
+        handler: async (response) => {
+          try {
+            setBusy(true);
+            const paid = await pay({ data: {
+              orderId: created.orderId,
+              gatewayOrderId: response.razorpay_order_id,
+              gatewayPaymentId: response.razorpay_payment_id,
+              signature: response.razorpay_signature,
+            } });
+            if (!paid.ok) { toast.error(paid.error); return; }
+            clear();
+            setPlaced({ orderNumber: paid.orderNumber });
+          } catch {
+            toast.error("Payment was received but confirmation failed. Please contact support with your payment ID.");
+          } finally {
+            setBusy(false);
+          }
         },
+        modal: { ondismiss: () => setBusy(false) },
       });
-      if (!created.ok) {
-        toast.error(created.error);
-        return;
-      }
-      const paid = await pay({ data: { orderId: created.orderId } });
-      if (!paid.ok) {
-        toast.error(paid.error);
-        return;
-      }
-      clear();
-      setPlaced({ orderNumber: paid.orderNumber });
-    } catch {
-      toast.error("Checkout failed. Please try again.");
+      razorpay.open();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Checkout failed. Please try again.");
     } finally {
       setBusy(false);
     }
   }
 
-  if (placed) {
-    return (
-      <PublicLayout>
-        <div className="mx-auto max-w-md px-4 py-24 text-center">
-          <h1 className="font-display text-4xl">Order confirmed</h1>
-          <p className="mt-3 text-sm text-muted-foreground">
-            Your order <span className="font-medium text-foreground">{placed.orderNumber}</span> has
-            been placed. You'll receive updates as it ships.
-          </p>
-          <div className="mt-8 flex justify-center gap-3">
-            <Button asChild>
-              <Link to="/account">View my orders</Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link to="/shop">Continue shopping</Link>
-            </Button>
-          </div>
+  if (placed) return (
+    <PublicLayout>
+      <div className="mx-auto max-w-md px-4 py-24 text-center">
+        <h1 className="font-display text-4xl">Order confirmed</h1>
+        <p className="mt-3 text-sm text-muted-foreground">Your order <span className="font-medium text-foreground">{placed.orderNumber}</span> has been placed. You'll receive updates as it ships.</p>
+        <div className="mt-8 flex justify-center gap-3">
+          <Button asChild><Link to="/account">View my orders</Link></Button>
+          <Button asChild variant="outline"><Link to="/shop">Continue shopping</Link></Button>
         </div>
-      </PublicLayout>
-    );
-  }
+      </div>
+    </PublicLayout>
+  );
 
-  if (!isPending && !session?.userId) {
-    return (
-      <PublicLayout>
-        <div className="mx-auto max-w-md px-4 py-24 text-center">
-          <h1 className="font-display text-4xl">Sign in to checkout</h1>
-          <p className="mt-3 text-sm text-muted-foreground">
-            You need an account so we can track and deliver your order.
-          </p>
-          <Button
-            className="mt-6"
-            onClick={() => navigate({ to: "/auth", search: { redirect: "/checkout" } })}
-          >
-            Sign in or create account
-          </Button>
-        </div>
-      </PublicLayout>
-    );
-  }
+  if (!isPending && !session?.userId) return (
+    <PublicLayout>
+      <div className="mx-auto max-w-md px-4 py-24 text-center">
+        <h1 className="font-display text-4xl">Sign in to checkout</h1>
+        <p className="mt-3 text-sm text-muted-foreground">You need an account so we can track and deliver your order.</p>
+        <Button className="mt-6" onClick={() => navigate({ to: "/auth", search: { redirect: "/checkout" } })}>Sign in or create account</Button>
+      </div>
+    </PublicLayout>
+  );
 
-  if (items.length === 0) {
-    return (
-      <PublicLayout>
-        <div className="mx-auto max-w-md px-4 py-24 text-center">
-          <h1 className="font-display text-4xl">Your cart is empty</h1>
-          <Button asChild className="mt-6">
-            <Link to="/shop">Browse fragrances</Link>
-          </Button>
-        </div>
-      </PublicLayout>
-    );
-  }
+  if (items.length === 0) return (
+    <PublicLayout>
+      <div className="mx-auto max-w-md px-4 py-24 text-center">
+        <h1 className="font-display text-4xl">Your cart is empty</h1>
+        <Button asChild className="mt-6"><Link to="/shop">Browse fragrances</Link></Button>
+      </div>
+    </PublicLayout>
+  );
 
   return (
     <PublicLayout>
@@ -149,85 +185,25 @@ function Checkout() {
           <h1 className="font-display text-4xl">Checkout</h1>
           <p className="mt-2 text-sm text-muted-foreground">Delivery details</p>
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
-            <Field
-              label="Full name"
-              value={form.shippingName}
-              onChange={(v) => setForm({ ...form, shippingName: v })}
-              maxLength={100}
-            />
-            <Field
-              label="Mobile (10 digits)"
-              value={form.mobile}
-              onChange={(v) => setForm({ ...form, mobile: v.replace(/\D/g, "").slice(0, 10) })}
-              maxLength={10}
-            />
-            <div className="sm:col-span-2">
-              <Field
-                label="Address"
-                value={form.address}
-                onChange={(v) => setForm({ ...form, address: v })}
-                maxLength={300}
-              />
-            </div>
-            <Field
-              label="City"
-              value={form.city}
-              onChange={(v) => setForm({ ...form, city: v })}
-              maxLength={80}
-            />
-            <Field
-              label="State"
-              value={form.state}
-              onChange={(v) => setForm({ ...form, state: v })}
-              maxLength={80}
-            />
-            <Field
-              label="Pincode"
-              value={form.pincode}
-              onChange={(v) => setForm({ ...form, pincode: v.replace(/\D/g, "").slice(0, 6) })}
-              maxLength={6}
-            />
+            <Field label="Full name" value={form.shippingName} onChange={(v) => setForm({ ...form, shippingName: v })} maxLength={100} />
+            <Field label="Mobile (10 digits)" value={form.mobile} onChange={(v) => setForm({ ...form, mobile: v.replace(/\D/g, "").slice(0, 10) })} maxLength={10} />
+            <div className="sm:col-span-2"><Field label="Address" value={form.address} onChange={(v) => setForm({ ...form, address: v })} maxLength={300} /></div>
+            <Field label="City" value={form.city} onChange={(v) => setForm({ ...form, city: v })} maxLength={80} />
+            <Field label="State" value={form.state} onChange={(v) => setForm({ ...form, state: v })} maxLength={80} />
+            <Field label="Pincode" value={form.pincode} onChange={(v) => setForm({ ...form, pincode: v.replace(/\D/g, "").slice(0, 6) })} maxLength={6} />
           </div>
-          {referral && (
-            <p className="mt-4 rounded-md bg-secondary p-3 text-xs text-muted-foreground">
-              Referral code <span className="font-medium text-foreground">{referral}</span> will be
-              applied to this order.
-            </p>
-          )}
-          <Button type="submit" size="lg" className="mt-6 w-full" disabled={busy}>
-            {busy ? "Processing payment…" : `Pay ${inr(subtotal + shipping)}`}
-          </Button>
-          <p className="mt-3 text-center text-xs text-muted-foreground">
-            Payments are verified server-side. Demo mode simulates the gateway until live keys are
-            added.
-          </p>
+          {referral && <p className="mt-4 rounded-md bg-secondary p-3 text-xs text-muted-foreground">Referral code <span className="font-medium text-foreground">{referral}</span> will be applied to this order.</p>}
+          <Button type="submit" size="lg" className="mt-6 w-full" disabled={busy}>{busy ? "Opening secure payment…" : `Pay ${inr(subtotal + shipping)}`}</Button>
+          <p className="mt-3 text-center text-xs text-muted-foreground">Payments are verified server-side before the order is marked paid and stock is deducted.</p>
         </form>
 
         <aside className="h-fit rounded-xl border border-border bg-card p-6">
           <h2 className="font-display text-2xl">Order summary</h2>
-          <ul className="mt-4 space-y-3 text-sm">
-            {items.map((item) => (
-              <li key={item.productId} className="flex justify-between gap-3">
-                <span className="text-muted-foreground">
-                  {item.name} × {item.quantity}
-                </span>
-                <span>{inr(item.price * item.quantity)}</span>
-              </li>
-            ))}
-          </ul>
+          <ul className="mt-4 space-y-3 text-sm">{items.map((item) => <li key={item.productId} className="flex justify-between gap-3"><span className="text-muted-foreground">{item.name} × {item.quantity}</span><span>{inr(item.price * item.quantity)}</span></li>)}</ul>
           <dl className="mt-4 space-y-2 border-t border-border pt-4 text-sm">
-            <div className="flex justify-between">
-              <dt className="text-muted-foreground">Subtotal</dt>
-              <dd>{inr(subtotal)}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-muted-foreground">Shipping</dt>
-              <dd>{shipping === 0 ? "Free" : inr(shipping)}</dd>
-            </div>
-            <div className="flex justify-between border-t border-border pt-3 text-base font-medium">
-              <dt>Total</dt>
-              <dd>{inr(subtotal + shipping)}</dd>
-            </div>
+            <div className="flex justify-between"><dt className="text-muted-foreground">Subtotal</dt><dd>{inr(subtotal)}</dd></div>
+            <div className="flex justify-between"><dt className="text-muted-foreground">Shipping</dt><dd>{shipping === 0 ? "Free" : inr(shipping)}</dd></div>
+            <div className="flex justify-between border-t border-border pt-3 text-base font-medium"><dt>Total</dt><dd>{inr(subtotal + shipping)}</dd></div>
           </dl>
         </aside>
       </div>
@@ -235,26 +211,6 @@ function Checkout() {
   );
 }
 
-function Field({
-  label,
-  value,
-  onChange,
-  maxLength,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  maxLength: number;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label>{label}</Label>
-      <Input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        maxLength={maxLength}
-        required
-      />
-    </div>
-  );
+function Field({ label, value, onChange, maxLength }: { label: string; value: string; onChange: (value: string) => void; maxLength: number }) {
+  return <div className="space-y-1.5"><Label>{label}</Label><Input value={value} onChange={(e) => onChange(e.target.value)} maxLength={maxLength} required /></div>;
 }
