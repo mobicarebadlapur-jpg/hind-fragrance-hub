@@ -1,5 +1,5 @@
 import * as React from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { RefreshCw, RotateCcw, XCircle } from "lucide-react";
@@ -13,9 +13,9 @@ import { supabase } from "@/integrations/supabase/client";
 export const Route = createFileRoute("/_authenticated/admin-refunds")({
   beforeLoad: async () => {
     const { data } = await supabase.auth.getClaims();
-    if (!data?.claims?.sub) throw new Error("Unauthorized");
+    if (!data?.claims?.sub) throw redirect({ to: "/auth", search: { redirect: "/admin-refunds" } });
     const { data: profile } = await supabase.from("profiles").select("role").eq("id", data.claims.sub).maybeSingle();
-    if (profile?.role !== "admin") throw new Error("Forbidden");
+    if (profile?.role !== "admin") throw redirect({ to: "/account" });
   },
   component: AdminRefundsPage,
 });
