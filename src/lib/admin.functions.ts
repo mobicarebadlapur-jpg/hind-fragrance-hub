@@ -61,12 +61,37 @@ export const updateOrderStatus = createServerFn({ method: "POST" }).middleware([
   const { error } = await db.from("orders").update({ status: data.status }).eq("id", data.orderId);
   if (error) return { ok: false as const, error: error.message };
   if (data.status === "delivered") await db.from("commissions").update({ status: "approved" }).eq("order_id", data.orderId).eq("status", "pending");
-  if (data.status === "cancelled" || data.status === "refunded") {
-    await db.from("commissions").update({ status: "cancelled" }).eq("order_id", data.orderId).in("status", ["pending", "approved"]);
-  }
+  if (data.status === "cancelled" || data.status === "refunded") await db.from("commissions").update({ status: "cancelled" }).eq("order_id", data.orderId).in("status", ["pending", "approved"]);
   await audit(context.userId, "order.status", previous.order_number, previous.status, data.status);
   await notify(previous.customer_id, "Order status updated", `Order ${previous.order_number} is now ${data.status.replace("_", " ")}.`, "order");
   return { ok: true as const };
+});
+
+export const getAdminDashboardSummary = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth]).handler(async ({ context }) => {
+  if (!(await isAdmin(context.userId))) return { ok: false as const, error: "Forbidden" };
+  const db = await admin();
+  const [{ data: orders, error: ordersError }, { data: commissions, error: commissionsError }, { data: partners, error: partnersError }, { data: products, error: productsError }] = await Promise.all([
+    db.from("orders").select("id,total,status,created_at"),
+    db.from("commissions").select("amount,status"),
+    db.from("partners").select("id,status"),
+    db.from("products").select("id,status,stock"),
+  ]);
+  if (ordersError || commissionsError || partnersError || productsError) return { ok: false as const, error: ordersError?.message ?? commissionsError?.message ?? partnersError?.message ?? productsError?.message ?? "Could not load dashboard." };
+  const rows = orders ?? [];
+  const paidStatuses = new Set(["paid", "processing", "shipped", "delivered"]);
+  const paidOrders = rows.filter((o) => paidStatuses.has(o.status));
+  const revenue = paidOrders.reduce((sum, o) => sum + Number(o.total ?? 0), 0);
+  const pendingPayments = rows.filter((o) => o.status === "payment_pending").reduce((sum, o) => sum + Number(o.total ?? 0), 0);
+  const cancelledRevenue = rows.filter((o) => ["cancelled", "refunded"].includes(o.status)).reduce((sum, o) => sum + Number(o.total ?? 0), 0);
+  const commissionByStatus = (status: string) => (commissions ?? []).filter((c) => c.status === status).reduce((sum, c) => sum + Number(c.amount ?? 0), 0);
+  const recent = [...rows].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 8);
+  return { ok: true as const, summary: {
+    revenue, paidOrders: paidOrders.length, totalOrders: rows.length, pendingPayments, cancelledRevenue,
+    commissionsPending: commissionByStatus("pending"), commissionsApproved: commissionByStatus("approved"), commissionsAvailable: commissionByStatus("available"), commissionsPaid: commissionByStatus("paid"),
+    activePartners: (partners ?? []).filter((p) => p.status === "active").length, pendingPartners: (partners ?? []).filter((p) => p.status === "pending").length,
+    activeProducts: (products ?? []).filter((p) => p.status === "active").length, lowStockProducts: (products ?? []).filter((p) => p.status === "active" && Number(p.stock) <= 5).length,
+    recent,
+  } };
 });
 
 export const updateCommissionStatus = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth]).inputValidator((input: unknown) => z.object({ commissionId: z.string().uuid(), status: z.enum(["pending", "approved", "available", "paid", "cancelled", "reversed"]) }).parse(input)).handler(async ({ data, context }) => {
