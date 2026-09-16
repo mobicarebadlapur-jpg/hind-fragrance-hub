@@ -15,78 +15,33 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as BusinessPartnerRouteImport } from './routes/business-partner'
 import { Route as CartRouteImport } from './routes/cart'
 import { Route as CheckoutRouteImport } from './routes/checkout'
-import { Route as DemoRouteImport } from './routes/demo'
 import { Route as JoinRouteImport } from './routes/join'
 import { Route as ShopRouteImport } from './routes/shop'
+import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as TermsRouteImport } from './routes/terms'
+import { Route as RefundRouteImport } from './routes/refund'
+import { Route as ShippingRouteImport } from './routes/shipping'
 import { Route as AuthenticatedAccountRouteImport } from './routes/_authenticated/account'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedPartnerRouteImport } from './routes/_authenticated/partner'
 import { Route as ProductSlugRouteImport } from './routes/product.$slug'
 
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
-  id: '/_authenticated',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthRoute = AuthRouteImport.update({
-  id: '/auth',
-  path: '/auth',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BusinessPartnerRoute = BusinessPartnerRouteImport.update({
-  id: '/business-partner',
-  path: '/business-partner',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CartRoute = CartRouteImport.update({
-  id: '/cart',
-  path: '/cart',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CheckoutRoute = CheckoutRouteImport.update({
-  id: '/checkout',
-  path: '/checkout',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DemoRoute = DemoRouteImport.update({
-  id: '/demo',
-  path: '/demo',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const JoinRoute = JoinRouteImport.update({
-  id: '/join',
-  path: '/join',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ShopRoute = ShopRouteImport.update({
-  id: '/shop',
-  path: '/shop',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthenticatedAccountRoute = AuthenticatedAccountRouteImport.update({
-  id: '/account',
-  path: '/account',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedPartnerRoute = AuthenticatedPartnerRouteImport.update({
-  id: '/partner',
-  path: '/partner',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const ProductSlugRoute = ProductSlugRouteImport.update({
-  id: '/product/$slug',
-  path: '/product/$slug',
-  getParentRoute: () => rootRouteImport,
-} as any)
+const IndexRoute = IndexRouteImport.update({ id: '/', path: '/', getParentRoute: () => rootRouteImport } as any)
+const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({ id: '/_authenticated', getParentRoute: () => rootRouteImport } as any)
+const AuthRoute = AuthRouteImport.update({ id: '/auth', path: '/auth', getParentRoute: () => rootRouteImport } as any)
+const BusinessPartnerRoute = BusinessPartnerRouteImport.update({ id: '/business-partner', path: '/business-partner', getParentRoute: () => rootRouteImport } as any)
+const CartRoute = CartRouteImport.update({ id: '/cart', path: '/cart', getParentRoute: () => rootRouteImport } as any)
+const CheckoutRoute = CheckoutRouteImport.update({ id: '/checkout', path: '/checkout', getParentRoute: () => rootRouteImport } as any)
+const JoinRoute = JoinRouteImport.update({ id: '/join', path: '/join', getParentRoute: () => rootRouteImport } as any)
+const ShopRoute = ShopRouteImport.update({ id: '/shop', path: '/shop', getParentRoute: () => rootRouteImport } as any)
+const PrivacyRoute = PrivacyRouteImport.update({ id: '/privacy', path: '/privacy', getParentRoute: () => rootRouteImport } as any)
+const TermsRoute = TermsRouteImport.update({ id: '/terms', path: '/terms', getParentRoute: () => rootRouteImport } as any)
+const RefundRoute = RefundRouteImport.update({ id: '/refund', path: '/refund', getParentRoute: () => rootRouteImport } as any)
+const ShippingRoute = ShippingRouteImport.update({ id: '/shipping', path: '/shipping', getParentRoute: () => rootRouteImport } as any)
+const AuthenticatedAccountRoute = AuthenticatedAccountRouteImport.update({ id: '/account', path: '/account', getParentRoute: () => AuthenticatedRouteRoute } as any)
+const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({ id: '/admin', path: '/admin', getParentRoute: () => AuthenticatedRouteRoute } as any)
+const AuthenticatedPartnerRoute = AuthenticatedPartnerRouteImport.update({ id: '/partner', path: '/partner', getParentRoute: () => AuthenticatedRouteRoute } as any)
+const ProductSlugRoute = ProductSlugRouteImport.update({ id: '/product/$slug', path: '/product/$slug', getParentRoute: () => rootRouteImport } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -94,28 +49,18 @@ export interface FileRoutesByFullPath {
   '/business-partner': typeof BusinessPartnerRoute
   '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRoute
-  '/demo': typeof DemoRoute
   '/join': typeof JoinRoute
   '/shop': typeof ShopRoute
+  '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
+  '/refund': typeof RefundRoute
+  '/shipping': typeof ShippingRoute
   '/account': typeof AuthenticatedAccountRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/partner': typeof AuthenticatedPartnerRoute
   '/product/$slug': typeof ProductSlugRoute
 }
-export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/auth': typeof AuthRoute
-  '/business-partner': typeof BusinessPartnerRoute
-  '/cart': typeof CartRoute
-  '/checkout': typeof CheckoutRoute
-  '/demo': typeof DemoRoute
-  '/join': typeof JoinRoute
-  '/shop': typeof ShopRoute
-  '/account': typeof AuthenticatedAccountRoute
-  '/admin': typeof AuthenticatedAdminRoute
-  '/partner': typeof AuthenticatedPartnerRoute
-  '/product/$slug': typeof ProductSlugRoute
-}
+export interface FileRoutesByTo extends FileRoutesByFullPath {}
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
@@ -124,9 +69,12 @@ export interface FileRoutesById {
   '/business-partner': typeof BusinessPartnerRoute
   '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRoute
-  '/demo': typeof DemoRoute
   '/join': typeof JoinRoute
   '/shop': typeof ShopRoute
+  '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
+  '/refund': typeof RefundRoute
+  '/shipping': typeof ShippingRoute
   '/_authenticated/account': typeof AuthenticatedAccountRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/partner': typeof AuthenticatedPartnerRoute
@@ -134,50 +82,13 @@ export interface FileRoutesById {
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | '/'
-    | '/auth'
-    | '/business-partner'
-    | '/cart'
-    | '/checkout'
-    | '/demo'
-    | '/join'
-    | '/shop'
-    | '/account'
-    | '/admin'
-    | '/partner'
-    | '/product/$slug'
+  fullPaths: keyof FileRoutesByFullPath
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/auth'
-    | '/business-partner'
-    | '/cart'
-    | '/checkout'
-    | '/demo'
-    | '/join'
-    | '/shop'
-    | '/account'
-    | '/admin'
-    | '/partner'
-    | '/product/$slug'
-  id:
-    | '__root__'
-    | '/'
-    | '/_authenticated'
-    | '/auth'
-    | '/business-partner'
-    | '/cart'
-    | '/checkout'
-    | '/demo'
-    | '/join'
-    | '/shop'
-    | '/_authenticated/account'
-    | '/_authenticated/admin'
-    | '/_authenticated/partner'
-    | '/product/$slug'
+  to: keyof FileRoutesByTo
+  id: keyof FileRoutesById
   fileRoutesById: FileRoutesById
 }
+
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
@@ -185,105 +96,33 @@ export interface RootRouteChildren {
   BusinessPartnerRoute: typeof BusinessPartnerRoute
   CartRoute: typeof CartRoute
   CheckoutRoute: typeof CheckoutRoute
-  DemoRoute: typeof DemoRoute
   JoinRoute: typeof JoinRoute
   ShopRoute: typeof ShopRoute
+  PrivacyRoute: typeof PrivacyRoute
+  TermsRoute: typeof TermsRoute
+  RefundRoute: typeof RefundRoute
+  ShippingRoute: typeof ShippingRoute
   ProductSlugRoute: typeof ProductSlugRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_authenticated': {
-      id: '/_authenticated'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof AuthenticatedRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth': {
-      id: '/auth'
-      path: '/auth'
-      fullPath: '/auth'
-      preLoaderRoute: typeof AuthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/business-partner': {
-      id: '/business-partner'
-      path: '/business-partner'
-      fullPath: '/business-partner'
-      preLoaderRoute: typeof BusinessPartnerRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/cart': {
-      id: '/cart'
-      path: '/cart'
-      fullPath: '/cart'
-      preLoaderRoute: typeof CartRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/checkout': {
-      id: '/checkout'
-      path: '/checkout'
-      fullPath: '/checkout'
-      preLoaderRoute: typeof CheckoutRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/demo': {
-      id: '/demo'
-      path: '/demo'
-      fullPath: '/demo'
-      preLoaderRoute: typeof DemoRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/join': {
-      id: '/join'
-      path: '/join'
-      fullPath: '/join'
-      preLoaderRoute: typeof JoinRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/shop': {
-      id: '/shop'
-      path: '/shop'
-      fullPath: '/shop'
-      preLoaderRoute: typeof ShopRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_authenticated/account': {
-      id: '/_authenticated/account'
-      path: '/account'
-      fullPath: '/account'
-      preLoaderRoute: typeof AuthenticatedAccountRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/admin': {
-      id: '/_authenticated/admin'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof AuthenticatedAdminRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/partner': {
-      id: '/_authenticated/partner'
-      path: '/partner'
-      fullPath: '/partner'
-      preLoaderRoute: typeof AuthenticatedPartnerRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/product/$slug': {
-      id: '/product/$slug'
-      path: '/product/$slug'
-      fullPath: '/product/$slug'
-      preLoaderRoute: typeof ProductSlugRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+    '/': { id: '/'; path: '/'; fullPath: '/'; preLoaderRoute: typeof IndexRouteImport; parentRoute: typeof rootRouteImport }
+    '/_authenticated': { id: '/_authenticated'; path: ''; fullPath: '/'; preLoaderRoute: typeof AuthenticatedRouteRouteImport; parentRoute: typeof rootRouteImport }
+    '/auth': { id: '/auth'; path: '/auth'; fullPath: '/auth'; preLoaderRoute: typeof AuthRouteImport; parentRoute: typeof rootRouteImport }
+    '/business-partner': { id: '/business-partner'; path: '/business-partner'; fullPath: '/business-partner'; preLoaderRoute: typeof BusinessPartnerRouteImport; parentRoute: typeof rootRouteImport }
+    '/cart': { id: '/cart'; path: '/cart'; fullPath: '/cart'; preLoaderRoute: typeof CartRouteImport; parentRoute: typeof rootRouteImport }
+    '/checkout': { id: '/checkout'; path: '/checkout'; fullPath: '/checkout'; preLoaderRoute: typeof CheckoutRouteImport; parentRoute: typeof rootRouteImport }
+    '/join': { id: '/join'; path: '/join'; fullPath: '/join'; preLoaderRoute: typeof JoinRouteImport; parentRoute: typeof rootRouteImport }
+    '/shop': { id: '/shop'; path: '/shop'; fullPath: '/shop'; preLoaderRoute: typeof ShopRouteImport; parentRoute: typeof rootRouteImport }
+    '/privacy': { id: '/privacy'; path: '/privacy'; fullPath: '/privacy'; preLoaderRoute: typeof PrivacyRouteImport; parentRoute: typeof rootRouteImport }
+    '/terms': { id: '/terms'; path: '/terms'; fullPath: '/terms'; preLoaderRoute: typeof TermsRouteImport; parentRoute: typeof rootRouteImport }
+    '/refund': { id: '/refund'; path: '/refund'; fullPath: '/refund'; preLoaderRoute: typeof RefundRouteImport; parentRoute: typeof rootRouteImport }
+    '/shipping': { id: '/shipping'; path: '/shipping'; fullPath: '/shipping'; preLoaderRoute: typeof ShippingRouteImport; parentRoute: typeof rootRouteImport }
+    '/_authenticated/account': { id: '/_authenticated/account'; path: '/account'; fullPath: '/account'; preLoaderRoute: typeof AuthenticatedAccountRouteImport; parentRoute: typeof AuthenticatedRouteRoute }
+    '/_authenticated/admin': { id: '/_authenticated/admin'; path: '/admin'; fullPath: '/admin'; preLoaderRoute: typeof AuthenticatedAdminRouteImport; parentRoute: typeof AuthenticatedRouteRoute }
+    '/_authenticated/partner': { id: '/_authenticated/partner'; path: '/partner'; fullPath: '/partner'; preLoaderRoute: typeof AuthenticatedPartnerRouteImport; parentRoute: typeof AuthenticatedRouteRoute }
+    '/product/$slug': { id: '/product/$slug'; path: '/product/$slug'; fullPath: '/product/$slug'; preLoaderRoute: typeof ProductSlugRouteImport; parentRoute: typeof rootRouteImport }
   }
 }
 
@@ -292,31 +131,29 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
   AuthenticatedPartnerRoute: typeof AuthenticatedPartnerRoute
 }
-
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
-  AuthenticatedAccountRoute: AuthenticatedAccountRoute,
-  AuthenticatedAdminRoute: AuthenticatedAdminRoute,
-  AuthenticatedPartnerRoute: AuthenticatedPartnerRoute,
+  AuthenticatedAccountRoute,
+  AuthenticatedAdminRoute,
+  AuthenticatedPartnerRoute,
 }
-
-const AuthenticatedRouteRouteWithChildren =
-  AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
+const AuthenticatedRouteRouteWithChildren = AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
+  IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
-  AuthRoute: AuthRoute,
-  BusinessPartnerRoute: BusinessPartnerRoute,
-  CartRoute: CartRoute,
-  CheckoutRoute: CheckoutRoute,
-  DemoRoute: DemoRoute,
-  JoinRoute: JoinRoute,
-  ShopRoute: ShopRoute,
-  ProductSlugRoute: ProductSlugRoute,
+  AuthRoute,
+  BusinessPartnerRoute,
+  CartRoute,
+  CheckoutRoute,
+  JoinRoute,
+  ShopRoute,
+  PrivacyRoute,
+  TermsRoute,
+  RefundRoute,
+  ShippingRoute,
+  ProductSlugRoute,
 }
-export const routeTree = rootRouteImport
-  ._addFileChildren(rootRouteChildren)
-  ._addFileTypes<FileRouteTypes>()
+export const routeTree = rootRouteImport._addFileChildren(rootRouteChildren)._addFileTypes<FileRouteTypes>()
 
 import type { getRouter } from './router.tsx'
 import type { startInstance } from './start.ts'
