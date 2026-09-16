@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable/index";
 
 const searchSchema = z.object({
   redirect: z.string().optional(),
@@ -46,8 +45,8 @@ function AuthPage() {
   const next = safePath(search.redirect);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user) window.location.replace(next);
+    supabase.auth.getClaims().then(({ data }) => {
+      if (data?.claims?.sub) window.location.replace(next);
     });
   }, [next]);
 
@@ -81,15 +80,16 @@ function AuthPage() {
   }
 
   async function google() {
-    const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: `${window.location.origin}${next}`,
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}${next}`,
+      },
     });
-    if (result.error) {
-      toast.error("Google sign-in failed. Please try again.");
-      return;
+
+    if (error) {
+      toast.error(error.message || "Google sign-in failed. Please try again.");
     }
-    if (result.redirected) return;
-    navigate({ to: next, replace: true });
   }
 
   return (
