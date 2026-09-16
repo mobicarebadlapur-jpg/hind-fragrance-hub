@@ -13,11 +13,7 @@ const checkoutSchema = z.object({
       const ids = new Set<string>();
       for (const item of items) {
         if (ids.has(item.productId)) {
-          ctx.addIssue({
-            code: "custom",
-            path: ["items"],
-            message: "Duplicate products are not allowed in checkout.",
-          });
+          ctx.addIssue({ code: "custom", path: ["items"], message: "Duplicate products are not allowed in checkout." });
           break;
         }
         ids.add(item.productId);
@@ -33,6 +29,34 @@ const checkoutSchema = z.object({
   pincode: z.string().trim().regex(/^[0-9]{6}$/),
 });
 
+async function createRazorpayOrder(amountInr: number, receipt: string) {
+  const keyId = process.env["RAZORPAY_KEY_ID"];
+  const keySecret = process.env["RAZORPAY_KEY_SECRET"];
+  if (!keyId || !keySecret) throw new Error("Razorpay server credentials are not configured.");
+
+  const response = await fetch("https://api.razorpay.com/v1/orders", {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ amount: Math.round(amountInr * 100), currency: "INR", receipt, payment_capture: 1 }),
+  });
+  const payload = (await response.json()) as { id?: string; amount?: number; currency?: string; error?: { description?: string } };
+  if (!response.ok || !payload.id) throw new Error(payload.error?.description ?? "Could not create Razorpay order.");
+  if (payload.amount !== Math.round(amountInr * 100) || payload.currency !== "INR") {
+    throw new Error("Razorpay returned an unexpected order amount.");
+  }
+  return payload;
+}
+
+async function verifyRazorpaySignature(orderId: string, paymentId: string, signature: string, secret: string) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const bytes = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${orderId}|${paymentId}`));
+  const expected = Array.from(new Uint8Array(bytes)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return expected === signature;
+}
+
 /** Prices, totals and referral attribution are resolved atomically by the database RPC. */
 export const placeOrder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -41,10 +65,7 @@ export const placeOrder = createServerFn({ method: "POST" })
     const db = await admin();
     const { data: result, error } = await db.rpc("create_order", {
       _customer_id: context.userId,
-      _items: data.items.map((item) => ({
-        product_id: item.productId,
-        quantity: item.quantity,
-      })),
+      _items: data.items.map((item) => ({ product_id: item.productId, quantity: item.quantity })),
       _referral_code: data.referralCode ?? null,
       _referral_visitor_id: data.referralVisitorId ?? null,
       _shipping_name: data.shippingName,
@@ -63,41 +84,83 @@ export const placeOrder = createServerFn({ method: "POST" })
       return { ok: false as const, error: message };
     }
 
-    return { ok: true as const, orderId: order.order_id, orderNumber: order.order_number, total: order.total };
-  });
+    const payment = await getSetting<PaymentSettings>("payment", { provider: "razorpay", demo_mode: true });
+    const receipt = `order_${order.order_number}`;
+    let gatewayOrderId = `demo_${crypto.randomUUID().replace(/-/g, "").slice(0, 18)}`;
+    let gateway = "demo";
 
-/** Confirms payment for an order; demo mode simulates a successful gateway. */
-export const payForOrder = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => z.object({ orderId: z.string().uuid() }).parse(input))
-  .handler(async ({ data, context }) => {
-    const db = await admin();
-    const { data: order } = await db
-      .from("orders")
-      .select("*")
-      .eq("id", data.orderId)
-      .eq("customer_id", context.userId)
-      .maybeSingle();
-    if (!order) return { ok: false as const, error: "Order not found." };
-    if (order.status !== "payment_pending" && order.status !== "created")
-      return { ok: false as const, error: "This order has already been paid." };
+    try {
+      if (!payment.demo_mode) {
+        const gatewayOrder = await createRazorpayOrder(order.total, receipt);
+        gatewayOrderId = gatewayOrder.id!;
+        gateway = "razorpay";
+      }
 
-    const payment = await getSetting<PaymentSettings>("payment", {
-      provider: "razorpay",
-      demo_mode: false,
-    });
-    if (!payment.demo_mode) {
-      return {
-        ok: false as const,
-        error: "Payment gateway is not configured yet. Please try again after payment setup is completed.",
-      };
+      const { error: txError } = await db.from("transactions").insert({
+        user_id: context.userId,
+        order_id: order.order_id,
+        amount: order.total,
+        currency: "INR",
+        gateway,
+        payment_type: "order",
+        gateway_order_id: gatewayOrderId,
+        status: "created",
+      });
+      if (txError) throw new Error(txError.message);
+    } catch (error) {
+      return { ok: false as const, error: error instanceof Error ? error.message : "Could not start payment." };
     }
 
-    const paymentId = `pay_${crypto.randomUUID().replace(/-/g, "").slice(0, 18)}`;
+    return {
+      ok: true as const,
+      orderId: order.order_id,
+      orderNumber: order.order_number,
+      total: order.total,
+      demoMode: payment.demo_mode,
+      gatewayOrderId,
+      razorpayKeyId: payment.demo_mode ? null : process.env["RAZORPAY_KEY_ID"] ?? null,
+    };
+  });
+
+/** Verifies Razorpay first, then atomically marks the order paid and deducts stock. */
+export const payForOrder = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({
+      orderId: z.string().uuid(),
+      gatewayOrderId: z.string().min(6),
+      gatewayPaymentId: z.string().min(6).optional(),
+      signature: z.string().min(10).optional(),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const db = await admin();
+    const { data: order } = await db.from("orders").select("*").eq("id", data.orderId).eq("customer_id", context.userId).maybeSingle();
+    if (!order) return { ok: false as const, error: "Order not found." };
+    if (order.status !== "payment_pending" && order.status !== "created") return { ok: false as const, error: "This order has already been paid." };
+
+    const payment = await getSetting<PaymentSettings>("payment", { provider: "razorpay", demo_mode: true });
+    const { data: txn } = await db.from("transactions").select("*").eq("order_id", order.id).eq("user_id", context.userId).eq("gateway_order_id", data.gatewayOrderId).eq("payment_type", "order").maybeSingle();
+    if (!txn) return { ok: false as const, error: "Payment record not found." };
+    if (txn.status === "success") return { ok: false as const, error: "This payment has already been processed." };
+    if (Number(txn.amount) !== Number(order.total)) return { ok: false as const, error: "Payment amount mismatch." };
+
+    let paymentId = data.gatewayPaymentId ?? `demo_pay_${crypto.randomUUID().replace(/-/g, "").slice(0, 18)}`;
+    if (!payment.demo_mode) {
+      const secret = process.env["RAZORPAY_KEY_SECRET"];
+      if (!secret || !data.gatewayPaymentId || !data.signature) return { ok: false as const, error: "Payment verification is not configured yet." };
+      const valid = await verifyRazorpaySignature(data.gatewayOrderId, data.gatewayPaymentId, data.signature, secret);
+      if (!valid) {
+        await db.from("transactions").update({ status: "failed" }).eq("id", txn.id);
+        return { ok: false as const, error: "Payment signature verification failed." };
+      }
+      paymentId = data.gatewayPaymentId;
+    }
+
     const { data: result, error: confirmationError } = await db.rpc("confirm_paid_order", {
       _order_id: order.id,
       _payment_id: paymentId,
-      _gateway: "demo",
+      _gateway: payment.demo_mode ? "demo" : "razorpay",
       _gateway_payment_id: paymentId,
       _amount: order.total,
     });
@@ -108,11 +171,7 @@ export const payForOrder = createServerFn({ method: "POST" })
       return { ok: false as const, error: message };
     }
 
-    await notify(
-      context.userId,
-      "Order confirmed",
-      `Your order ${order.order_number} has been placed successfully.`,
-      "order",
-    );
+    await db.from("transactions").update({ status: "success", gateway_payment_id: paymentId, gateway_signature: data.signature ?? null }).eq("id", txn.id);
+    await notify(context.userId, "Order confirmed", `Your order ${order.order_number} has been placed successfully.`, "order");
     return { ok: true as const, orderNumber: order.order_number, paymentId };
   });
