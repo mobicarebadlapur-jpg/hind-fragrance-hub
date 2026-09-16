@@ -14,16 +14,48 @@ import { createMembershipOrder, verifyMembershipPayment } from "@/lib/membership
 import { ensureProfile } from "@/lib/account.functions";
 
 export const Route = createFileRoute("/join")({
-  head: () => ({
-    meta: [
-      { title: "Join as a Business Partner for ₹199 — Hind Fragrance" },
-      { name: "description", content: "Register as a Hind Fragrance Business Partner for ₹199 and submit your application for admin approval." },
-      { property: "og:title", content: "Join as a Business Partner — Hind Fragrance" },
-      { property: "og:description", content: "One-time ₹199 registration, followed by partner approval." },
-    ],
-  }),
+  head: () => ({ meta: [
+    { title: "Join as a Business Partner for ₹199 — Hind Fragrance" },
+    { name: "description", content: "Register as a Hind Fragrance Business Partner for ₹199 and submit your application for admin approval." },
+    { property: "og:title", content: "Join as a Business Partner — Hind Fragrance" },
+    { property: "og:description", content: "One-time ₹199 registration, followed by partner approval." },
+  ] }),
   component: Join,
 });
+
+type RazorpayOptions = {
+  key: string;
+  order_id: string;
+  amount: number;
+  currency: string;
+  name: string;
+  description: string;
+  handler: (response: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) => void;
+  modal?: { ondismiss?: () => void };
+};
+
+type RazorpayConstructor = new (options: RazorpayOptions) => { open: () => void };
+
+declare global { interface Window { Razorpay?: RazorpayConstructor } }
+
+function loadRazorpay() {
+  return new Promise<void>((resolve, reject) => {
+    if (window.Razorpay) return resolve();
+    const existing = document.querySelector<HTMLScriptElement>('script[data-razorpay="true"]');
+    if (existing) {
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () => reject(new Error("Could not load Razorpay checkout.")), { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    script.dataset.razorpay = "true";
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Could not load Razorpay checkout."));
+    document.body.appendChild(script);
+  });
+}
 
 function Join() {
   const { data: session, isPending } = useSession();
@@ -34,7 +66,6 @@ function Join() {
   const startPayment = useServerFn(createMembershipOrder);
   const confirmPayment = useServerFn(verifyMembershipPayment);
   const saveProfile = useServerFn(ensureProfile);
-
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [fullName, setFullName] = useState("");
   const [mobile, setMobile] = useState("");
@@ -43,63 +74,28 @@ function Join() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ partnerCode: string; status: string } | null>(null);
 
-  if (!isPending && !session?.userId) {
-    return (
-      <PublicLayout>
-        <div className="mx-auto max-w-md px-4 py-24 text-center">
-          <h1 className="font-display text-4xl">Sign in to continue</h1>
-          <p className="mt-3 text-sm text-muted-foreground">Create your Hind Fragrance account first, then complete the ₹199 partner registration.</p>
-          <Button className="mt-6" onClick={() => navigate({ to: "/auth", search: { redirect: "/join", mode: "signup" } })}>Create account</Button>
-        </div>
-      </PublicLayout>
-    );
-  }
-
-  if (session?.partner?.status === "active" && !result) {
-    return (
-      <PublicLayout>
-        <div className="mx-auto max-w-md px-4 py-24 text-center">
-          <h1 className="font-display text-4xl">You're already a partner</h1>
-          <p className="mt-3 text-sm text-muted-foreground">Partner ID {session.partner.partner_code}</p>
-          <Button asChild className="mt-6"><Link to="/partner">Open dashboard</Link></Button>
-        </div>
-      </PublicLayout>
-    );
-  }
-
-  if (session?.partner?.status === "pending" && !result) {
-    return (
-      <PublicLayout>
-        <div className="mx-auto max-w-md px-4 py-24 text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-gold/20"><Check className="h-6 w-6 text-gold" /></div>
-          <h1 className="mt-6 font-display text-4xl">Application under review</h1>
-          <p className="mt-3 text-sm text-muted-foreground">Partner ID {session.partner.partner_code}. Your payment has been received and your application is waiting for admin approval.</p>
-        </div>
-      </PublicLayout>
-    );
-  }
+  if (!isPending && !session?.userId) return <PublicLayout><div className="mx-auto max-w-md px-4 py-24 text-center"><h1 className="font-display text-4xl">Sign in to continue</h1><p className="mt-3 text-sm text-muted-foreground">Create your Hind Fragrance account first, then complete the ₹199 partner registration.</p><Button className="mt-6" onClick={() => navigate({ to: "/auth", search: { redirect: "/join", mode: "signup" } })}>Create account</Button></div></PublicLayout>;
+  if (session?.partner?.status === "active" && !result) return <PublicLayout><div className="mx-auto max-w-md px-4 py-24 text-center"><h1 className="font-display text-4xl">You're already a partner</h1><p className="mt-3 text-sm text-muted-foreground">Partner ID {session.partner.partner_code}</p><Button asChild className="mt-6"><Link to="/partner">Open dashboard</Link></Button></div></PublicLayout>;
+  if (session?.partner?.status === "pending" && !result) return <PublicLayout><div className="mx-auto max-w-md px-4 py-24 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-gold/20"><Check className="h-6 w-6 text-gold" /></div><h1 className="mt-6 font-display text-4xl">Application under review</h1><p className="mt-3 text-sm text-muted-foreground">Partner ID {session.partner.partner_code}. Your payment has been received and your application is waiting for admin approval.</p></div></PublicLayout>;
 
   async function handleSendOtp() {
     setBusy(true);
-    try {
-      const res = await requestOtp({ data: { mobile } });
-      if (!res.ok) { toast.error(res.error); return; }
-      setHint(res.demoCode ? `Demo mode: your OTP is ${res.demoCode}` : null);
-      setStep(2);
-      toast.success("OTP sent to your mobile.");
-    } catch { toast.error("Enter a valid 10 digit mobile number."); }
-    finally { setBusy(false); }
+    try { const res = await requestOtp({ data: { mobile } }); if (!res.ok) { toast.error(res.error); return; } setHint(res.demoCode ? `Demo mode: your OTP is ${res.demoCode}` : null); setStep(2); toast.success("OTP sent to your mobile."); }
+    catch { toast.error("Enter a valid 10 digit mobile number."); } finally { setBusy(false); }
   }
 
   async function handleVerify() {
     setBusy(true);
-    try {
-      const res = await checkOtp({ data: { mobile, code } });
-      if (!res.ok) { toast.error(res.error); return; }
-      await saveProfile({ data: { full_name: fullName, mobile } });
-      setStep(3);
-    } catch { toast.error("Enter the 6 digit code."); }
-    finally { setBusy(false); }
+    try { const res = await checkOtp({ data: { mobile, code } }); if (!res.ok) { toast.error(res.error); return; } await saveProfile({ data: { full_name: fullName, mobile } }); setStep(3); }
+    catch { toast.error("Enter the 6 digit code."); } finally { setBusy(false); }
+  }
+
+  async function finishPayment(gatewayOrderId: string, gatewayPaymentId?: string, signature?: string) {
+    const verified = await confirmPayment({ data: { gatewayOrderId, gatewayPaymentId, signature } });
+    if (!verified.ok) { toast.error(verified.error); return; }
+    setResult({ partnerCode: verified.partnerCode, status: verified.status });
+    await queryClient.invalidateQueries({ queryKey: ["session"] });
+    toast.success("Application submitted for approval.");
   }
 
   async function handlePay() {
@@ -107,60 +103,37 @@ function Join() {
     try {
       const order = await startPayment({});
       if (!order.ok) { toast.error(order.error); return; }
-      const verified = await confirmPayment({ data: { gatewayOrderId: order.gatewayOrderId } });
-      if (!verified.ok) { toast.error(verified.error); return; }
-      setResult({ partnerCode: verified.partnerCode, status: verified.status });
-      await queryClient.invalidateQueries({ queryKey: ["session"] });
-      toast.success("Application submitted for approval.");
-    } finally { setBusy(false); }
+      if (order.demoMode) {
+        await finishPayment(order.gatewayOrderId);
+        return;
+      }
+      if (!order.razorpayKeyId) { toast.error("Razorpay is not configured yet."); return; }
+      await loadRazorpay();
+      if (!window.Razorpay) throw new Error("Razorpay checkout is unavailable.");
+      const Razorpay = window.Razorpay;
+      const checkout = new Razorpay({
+        key: order.razorpayKeyId,
+        order_id: order.gatewayOrderId,
+        amount: Math.round(order.amount * 100),
+        currency: "INR",
+        name: "Hind Fragrance",
+        description: order.name,
+        handler: async (response) => {
+          try { await finishPayment(response.razorpay_order_id, response.razorpay_payment_id, response.razorpay_signature); }
+          catch (error) { toast.error(error instanceof Error ? error.message : "Payment verification failed."); }
+          finally { setBusy(false); }
+        },
+        modal: { ondismiss: () => setBusy(false) },
+      });
+      checkout.open();
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not start payment."); setBusy(false); }
   }
 
-  if (result) {
-    return (
-      <PublicLayout>
-        <div className="mx-auto max-w-lg px-4 py-20 text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-gold/20"><Check className="h-6 w-6 text-gold" /></div>
-          <h1 className="mt-6 font-display text-4xl">Application submitted</h1>
-          <p className="mt-3 text-sm text-muted-foreground">Partner ID <span className="font-medium text-foreground">{result.partnerCode}</span></p>
-          <p className="mt-3 text-sm text-muted-foreground">Your payment was received successfully. An admin must approve your application before your partner account becomes active and your referral link can be used.</p>
-          <Button asChild className="mt-8" size="lg"><Link to="/account">Go to my account</Link></Button>
-        </div>
-      </PublicLayout>
-    );
-  }
+  if (result) return <PublicLayout><div className="mx-auto max-w-lg px-4 py-20 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-gold/20"><Check className="h-6 w-6 text-gold" /></div><h1 className="mt-6 font-display text-4xl">Application submitted</h1><p className="mt-3 text-sm text-muted-foreground">Partner ID <span className="font-medium text-foreground">{result.partnerCode}</span></p><p className="mt-3 text-sm text-muted-foreground">Your payment was received successfully. An admin must approve your application before your partner account becomes active and your referral link can be used.</p><Button asChild className="mt-8" size="lg"><Link to="/account">Go to my account</Link></Button></div></PublicLayout>;
 
-  return (
-    <PublicLayout>
-      <div className="mx-auto max-w-lg px-4 py-16">
-        <span className="eyebrow">Step {step} of 3</span>
-        <h1 className="mt-2 font-display text-4xl">Business Partner registration</h1>
-        <div className="mt-8 rounded-2xl border border-border bg-card p-6">
-          {step === 1 && (
-            <div className="space-y-4">
-              <div className="space-y-1.5"><Label htmlFor="name">Full name</Label><Input id="name" value={fullName} onChange={(e) => setFullName(e.target.value)} maxLength={100} /></div>
-              <div className="space-y-1.5"><Label htmlFor="mobile">Mobile number</Label><Input id="mobile" inputMode="numeric" value={mobile} onChange={(e) => setMobile(e.target.value.replace(/\D/g, "").slice(0, 10))} placeholder="10 digit mobile" /></div>
-              <Button className="w-full" onClick={handleSendOtp} disabled={busy || mobile.length !== 10 || fullName.trim().length < 2}>{busy ? "Sending…" : "Send OTP"}</Button>
-            </div>
-          )}
-          {step === 2 && (
-            <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">Enter the 6 digit code sent to {mobile}.</p>
-              {hint && <p className="rounded-md bg-secondary p-3 text-xs">{hint}</p>}
-              <Input inputMode="numeric" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="••••••" className="text-center tracking-[0.5em]" />
-              <Button className="w-full" onClick={handleVerify} disabled={busy || code.length !== 6}>{busy ? "Verifying…" : "Verify mobile"}</Button>
-              <button className="w-full text-xs text-muted-foreground underline underline-offset-4" onClick={handleSendOtp} disabled={busy}>Resend OTP</button>
-            </div>
-          )}
-          {step === 3 && (
-            <div className="space-y-4">
-              <div className="flex items-baseline justify-between border-b border-border pb-4"><span className="text-sm text-muted-foreground">Business Partner Membership</span><span className="font-display text-3xl">₹199</span></div>
-              <ul className="space-y-2 text-sm text-muted-foreground"><li>• Unique Partner ID and referral link after approval</li><li>• Earnings, clicks and orders dashboard after approval</li><li>• Bank / UPI payouts once approved</li></ul>
-              <Button className="w-full" size="lg" onClick={handlePay} disabled={busy}>{busy ? "Processing…" : "Pay ₹199 and submit application"}</Button>
-              <p className="text-center text-xs text-muted-foreground">One-time registration fee. Commission is earned on eligible product sales only and partner access begins after admin approval.</p>
-            </div>
-          )}
-        </div>
-      </div>
-    </PublicLayout>
-  );
+  return <PublicLayout><div className="mx-auto max-w-lg px-4 py-16"><span className="eyebrow">Step {step} of 3</span><h1 className="mt-2 font-display text-4xl">Business Partner registration</h1><div className="mt-8 rounded-2xl border border-border bg-card p-6">
+    {step === 1 && <div className="space-y-4"><div className="space-y-1.5"><Label htmlFor="name">Full name</Label><Input id="name" value={fullName} onChange={(e) => setFullName(e.target.value)} maxLength={100} /></div><div className="space-y-1.5"><Label htmlFor="mobile">Mobile number</Label><Input id="mobile" inputMode="numeric" value={mobile} onChange={(e) => setMobile(e.target.value.replace(/\D/g, "").slice(0, 10))} placeholder="10 digit mobile" /></div><Button className="w-full" onClick={handleSendOtp} disabled={busy || mobile.length !== 10 || fullName.trim().length < 2}>{busy ? "Sending…" : "Send OTP"}</Button></div>}
+    {step === 2 && <div className="space-y-4"><p className="text-sm text-muted-foreground">Enter the 6 digit code sent to {mobile}.</p>{hint && <p className="rounded-md bg-secondary p-3 text-xs">{hint}</p>}<Input inputMode="numeric" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="••••••" className="text-center tracking-[0.5em]" /><Button className="w-full" onClick={handleVerify} disabled={busy || code.length !== 6}>{busy ? "Verifying…" : "Verify mobile"}</Button><button className="w-full text-xs text-muted-foreground underline underline-offset-4" onClick={handleSendOtp} disabled={busy}>Resend OTP</button></div>}
+    {step === 3 && <div className="space-y-4"><div className="flex items-baseline justify-between border-b border-border pb-4"><span className="text-sm text-muted-foreground">Business Partner Membership</span><span className="font-display text-3xl">₹199</span></div><ul className="space-y-2 text-sm text-muted-foreground"><li>• Unique Partner ID and referral link after approval</li><li>• Earnings, clicks and orders dashboard after approval</li><li>• Bank / UPI payouts once approved</li></ul><Button className="w-full" size="lg" onClick={handlePay} disabled={busy}>{busy ? "Opening payment…" : "Pay ₹199 and submit application"}</Button><p className="text-center text-xs text-muted-foreground">One-time registration fee. Commission is earned on eligible product sales only and partner access begins after admin approval.</p></div>}
+  </div></div></PublicLayout>;
 }
