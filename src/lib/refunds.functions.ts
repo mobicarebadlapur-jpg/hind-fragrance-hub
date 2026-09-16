@@ -112,7 +112,7 @@ export const processAdminRefund = createServerFn({ method: "POST" })
       if (storeRefundIdError) return { ok: false as const, error: "Refund was created but its reference could not be saved. Keep this request in approved state and retry after checking the gateway." };
     }
 
-    const { data: finalized, error: finalizeError } = await db.rpc("finalize_order_refund", { _order_id: order.id, _refund_payment_id: refundPaymentId });
+    const { data: finalized, error: finalizeError } = await (db as any).rpc("finalize_order_refund", { _order_id: order.id, _refund_payment_id: refundPaymentId });
     if (finalizeError || !finalized?.[0]?.order_number) return { ok: false as const, error: finalizeError?.message ?? "Refund was created but order reconciliation could not be completed." };
 
     await db.from("transactions").update({ status: "refunded", updated_at: new Date().toISOString() }).eq("order_id", order.id).eq("user_id", order.customer_id).eq("payment_type", "order").eq("status", "success");
