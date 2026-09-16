@@ -45,8 +45,6 @@ export const placeOrder = createServerFn({ method: "POST" })
       .select("id,name,price,sale_price,stock,status")
       .in("id", ids);
 
-    // Never silently drop cart lines. A client must not be able to turn an
-    // unavailable/missing product into a smaller, valid order.
     if (!products || products.length !== ids.length) {
       return { ok: false as const, error: "One or more products are no longer available." };
     }
@@ -115,7 +113,7 @@ export const placeOrder = createServerFn({ method: "POST" })
         shipping,
         total,
         status: "payment_pending",
-      })
+      } as never)
       .select("*")
       .single();
     if (error || !order) return { ok: false as const, error: "Could not create your order." };
