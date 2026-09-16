@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useMemo, useState } from "react";
@@ -125,7 +125,11 @@ function AdminConsole() {
   }
 
   return <DashboardShell title="Admin Console" subtitle={session?.email ?? ""}>
-    {!isAdmin ? <EmptyState message="You do not have permission to access the admin console." /> : <Tabs defaultValue="orders">
+    {!isAdmin ? <EmptyState message="You do not have permission to access the admin console." /> : <>
+      <div className="mb-4 flex justify-end">
+        <Button asChild variant="outline" size="sm"><Link to="/admin-refunds">Refund requests</Link></Button>
+      </div>
+      <Tabs defaultValue="orders">
       <TabsList><TabsTrigger value="orders">Orders</TabsTrigger><TabsTrigger value="partners">Partners</TabsTrigger><TabsTrigger value="products">Products</TabsTrigger></TabsList>
 
       <TabsContent value="orders" className="mt-6 space-y-5">
@@ -192,6 +196,7 @@ function AdminConsole() {
         </div><div className="mt-5 flex gap-2"><Button onClick={() => void saveCurrentProduct()} disabled={productBusy}>{productBusy ? "Saving…" : productForm.id ? "Update product" : "Create product"}</Button>{productForm.id && <Button variant="outline" onClick={() => setProductForm(EMPTY_PRODUCT)}>Cancel edit</Button>}</div></div>
         {productsQuery.isLoading ? <p className="text-sm text-muted-foreground">Loading products…</p> : productsQuery.error ? <EmptyState message="Could not load products." /> : productsQuery.data?.length === 0 ? <EmptyState message="No products yet. Add the first product above." /> : <div className="space-y-3">{productsQuery.data?.map((product) => <div key={product.id} className="rounded-xl border border-border bg-card p-5"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div className="flex min-w-0 gap-4">{product.image_url ? <img src={product.image_url} alt="" className="h-16 w-16 rounded-lg object-cover" /> : <div className="h-16 w-16 rounded-lg border bg-muted" />}<div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="font-medium">{product.name}</span><StatusPill status={product.status} /></div><p className="mt-1 text-xs text-muted-foreground">{product.sku} · {product.category} · Stock {product.stock}</p><p className="mt-1 text-sm">₹{Number(product.sale_price ?? product.price).toLocaleString("en-IN")} {product.sale_price != null && <span className="ml-2 text-xs text-muted-foreground line-through">₹{Number(product.price).toLocaleString("en-IN")}</span>}</p><p className="mt-1 text-xs text-muted-foreground">Commission {Number(product.commission_percent ?? 0)}%{product.featured ? " · Featured" : ""}</p></div></div><Button size="sm" variant="outline" onClick={() => editProduct(product)}>Edit</Button></div></div>)}</div>}
       </TabsContent>
-    </Tabs>}
+    </Tabs>
+    </>}
   </DashboardShell>;
 }
