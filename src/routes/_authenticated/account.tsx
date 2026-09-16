@@ -106,6 +106,11 @@ function Account() {
                   </li>
                 ))}
               </ul>
+              <div className="mt-4 border-t border-border pt-4">
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/orders/$orderId" params={{ orderId: order.id }}>Track order & payment</Link>
+                </Button>
+              </div>
             </div>
           ))}
         </TabsContent>
