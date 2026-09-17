@@ -135,6 +135,7 @@ export const placeOrder = createServerFn({ method: "POST" })
       });
       if (txError) throw new Error(txError.message);
     } catch (error) {
+      await db.rpc("delete_unpaid_order", { _order_id: order.order_id });
       return { ok: false as const, error: error instanceof Error ? error.message : "Could not start payment." };
     }
 
