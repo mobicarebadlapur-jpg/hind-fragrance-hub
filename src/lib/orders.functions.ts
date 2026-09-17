@@ -150,7 +150,7 @@ export const placeOrder = createServerFn({ method: "POST" })
     };
   });
 
-/** Verifies Razorpay first, then atomically marks the order paid and deducts stock. */
+/** Verifies Razorpay first, then atomically marks the order paid and settles its payment ledger. */
 export const payForOrder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
@@ -171,7 +171,8 @@ export const payForOrder = createServerFn({ method: "POST" })
     const { data: txn } = await db.from("transactions").select("*").eq("order_id", order.id).eq("user_id", context.userId).eq("gateway_order_id", data.gatewayOrderId).eq("payment_type", "order").maybeSingle();
     if (!txn) return { ok: false as const, error: "Payment record not found." };
     if (txn.status === "success") return { ok: false as const, error: "This payment has already been processed." };
-    if (Number(txn.amount) !== Number(order.total)) return { ok: false as const, error: "Payment amount mismatch." };
+    if (txn.status !== "created") return { ok: false as const, error: "This payment is not pending." };
+    if (Number(txn.amount) !== Number(order.total)) return { ok: false as const, error: "Payment amount mismatch." }
 
     let paymentId = data.gatewayPaymentId ?? `demo_pay_${crypto.randomUUID().replace(/-/g, "").slice(0, 18)}`;
     if (!payment.demo_mode) {
@@ -179,7 +180,7 @@ export const payForOrder = createServerFn({ method: "POST" })
       if (!secret || !data.gatewayPaymentId || !data.signature) return { ok: false as const, error: "Payment verification is not configured yet." };
       const valid = await verifyRazorpaySignature(data.gatewayOrderId, data.gatewayPaymentId, data.signature, secret);
       if (!valid) {
-        await db.from("transactions").update({ status: "failed" }).eq("id", txn.id);
+        await db.from("transactions").update({ status: "failed" }).eq("id", txn.id).eq("status", "created");
         return { ok: false as const, error: "Payment signature verification failed." };
       }
       paymentId = data.gatewayPaymentId;
@@ -187,10 +188,12 @@ export const payForOrder = createServerFn({ method: "POST" })
 
     const { data: result, error: confirmationError } = await db.rpc("confirm_paid_order", {
       _order_id: order.id,
+      _gateway_order_id: data.gatewayOrderId,
       _payment_id: paymentId,
       _gateway: payment.demo_mode ? "demo" : "razorpay",
       _gateway_payment_id: paymentId,
       _amount: order.total,
+      _gateway_signature: data.signature ?? null,
     });
     if (confirmationError || !result?.[0]?.order_number) {
       const message = confirmationError?.message?.toLowerCase().includes("insufficient stock")
@@ -199,7 +202,6 @@ export const payForOrder = createServerFn({ method: "POST" })
       return { ok: false as const, error: message };
     }
 
-    await db.from("transactions").update({ status: "success", gateway_payment_id: paymentId, gateway_signature: data.signature ?? null }).eq("id", txn.id);
     await notify(context.userId, "Order confirmed", `Your order ${order.order_number} has been placed successfully.`, "order");
     return { ok: true as const, orderNumber: order.order_number, paymentId };
   });
