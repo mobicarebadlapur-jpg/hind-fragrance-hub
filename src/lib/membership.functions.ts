@@ -1,7 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { admin, getSetting, notify } from "./platform.server";
+import {
+  admin,
+  getSetting,
+  notify,
+  demoPaymentAllowed,
+  PAYMENTS_NOT_LIVE_MESSAGE,
+} from "./platform.server";
 import type { MembershipSettings, PaymentSettings } from "./platform.server";
 
 /** Step 1 of the ₹199 membership: create the payment order server-side. */
@@ -83,7 +89,12 @@ export const verifyMembershipPayment = createServerFn({ method: "POST" })
     if (txn.status === "success" && txn.partner_id)
       return { ok: false as const, error: "This payment has already been processed." };
 
-    if (!payment.demo_mode) {
+    if (payment.demo_mode) {
+      // Simulated membership payments are restricted to admin/test accounts
+      // until the real gateway is live.
+      if (!(await demoPaymentAllowed(context.userId)))
+        return { ok: false as const, error: PAYMENTS_NOT_LIVE_MESSAGE };
+    } else {
       // Production integration point: verify HMAC signature with RAZORPAY_KEY_SECRET.
       const secret = process.env["RAZORPAY_KEY_SECRET"];
       if (!secret || !data.signature)
