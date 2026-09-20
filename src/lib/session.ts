@@ -2,11 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 
-export type AppRole = "customer" | "partner" | "admin";
+export type AppRole = Database["public"]["Enums"]["app_role"];
 export type PartnerRow = Database["public"]["Tables"]["partners"]["Row"];
-export type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"] & {
-  role: AppRole;
-};
+export type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 
 export type SessionInfo = {
   userId: string | null;
@@ -21,22 +19,18 @@ export async function loadSession(): Promise<SessionInfo> {
   const user = data.user;
   if (!user) return { userId: null, email: null, roles: [], profile: null, partner: null };
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  const typedProfile = profile as ProfileRow | null;
-  const role = typedProfile?.role ?? "customer";
+  const [roles, profile, partner] = await Promise.all([
+    supabase.from("user_roles").select("role").eq("user_id", user.id),
+    supabase.from("profiles").select("*").eq("id", user.id).maybeSingle(),
+    supabase.from("partners").select("*").eq("user_id", user.id).maybeSingle(),
+  ]);
 
   return {
     userId: user.id,
     email: user.email ?? null,
-    roles: [role],
-    profile: typedProfile,
-    // Partner records will be added with the partner data model in the next step.
-    partner: null,
+    roles: (roles.data ?? []).map((r) => r.role),
+    profile: profile.data ?? null,
+    partner: partner.data ?? null,
   };
 }
 

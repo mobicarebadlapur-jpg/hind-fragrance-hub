@@ -1,202 +1,684 @@
-import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { DashboardShell, EmptyState, StatusPill } from "@/components/dash/DashboardShell";
+import { Download, Plus } from "lucide-react";
+import { DashboardShell, EmptyState, StatCard, StatusPill } from "@/components/dash/DashboardShell";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
+import { downloadCsv, inr, shortDate } from "@/lib/format";
 import { useIsAdmin, useSession } from "@/lib/session";
 import {
-  listAdminPartners,
-  listAdminProducts,
-  listAdminOrders,
-  updatePartnerStatus,
+  setCustomerBlocked,
+  updateCommissionStatus,
   updateOrderStatus,
+  updatePartnerStatus,
+  updatePayoutStatus,
+  updateSetting,
   upsertProduct,
 } from "@/lib/admin.functions";
 
 export const Route = createFileRoute("/_authenticated/admin")({
-  beforeLoad: async () => {
-    const { data: userData } = await supabase.auth.getUser();
-    if (!userData.user) throw redirect({ to: "/auth", search: { redirect: "/admin" } });
-    const { data: profile } = await supabase.from("profiles").select("role").eq("id", userData.user.id).maybeSingle();
-    if (profile?.role !== "admin") throw redirect({ to: "/account" });
-  },
-  head: () => ({ meta: [
-    { title: "Admin Console — Hind Fragrance" },
-    { name: "description", content: "Manage Hind Fragrance partners, products and orders." },
-  ] }),
+  head: () => ({
+    meta: [
+      { title: "Admin Console — Hind Fragrance" },
+      {
+        name: "description",
+        content: "Manage partners, orders, commissions, payouts and platform settings.",
+      },
+      { property: "og:title", content: "Admin Console — Hind Fragrance" },
+      { property: "og:description", content: "Hind Fragrance operations control centre." },
+    ],
+  }),
   component: AdminConsole,
 });
 
-const PARTNER_STATUSES = ["pending", "active", "suspended", "cancelled"] as const;
-type PartnerStatus = (typeof PARTNER_STATUSES)[number];
-const ORDER_STATUSES = ["created", "payment_pending", "paid", "processing", "shipped", "delivered", "cancelled", "refunded"] as const;
-type OrderStatus = (typeof ORDER_STATUSES)[number];
-
-const EMPTY_PRODUCT = {
-  name: "", slug: "", sku: "", category: "", short_description: "", description: "", image_url: "",
-  price: "", sale_price: "", stock: "0", commission_percent: "0", featured: false,
-  status: "draft" as "active" | "draft" | "archived",
-};
-type ProductForm = typeof EMPTY_PRODUCT & { id?: string };
+const ORDER_STATUSES = [
+  "created",
+  "payment_pending",
+  "paid",
+  "processing",
+  "shipped",
+  "delivered",
+  "cancelled",
+  "refunded",
+  "returned",
+] as const;
+const PARTNER_STATUSES = [
+  "pending",
+  "payment_pending",
+  "active",
+  "suspended",
+  "cancelled",
+] as const;
+const COMMISSION_STATUSES = [
+  "pending",
+  "approved",
+  "available",
+  "paid",
+  "cancelled",
+  "reversed",
+] as const;
+const PAYOUT_STATUSES = [
+  "requested",
+  "under_review",
+  "approved",
+  "processing",
+  "paid",
+  "rejected",
+] as const;
 
 function AdminConsole() {
+  const { isPending } = useSession();
   const isAdmin = useIsAdmin();
-  const { data: session } = useSession();
   const queryClient = useQueryClient();
-  const listPartners = useServerFn(listAdminPartners);
-  const updatePartner = useServerFn(updatePartnerStatus);
-  const listProducts = useServerFn(listAdminProducts);
+  const saveSetting = useServerFn(updateSetting);
+  const setPartner = useServerFn(updatePartnerStatus);
+  const setOrder = useServerFn(updateOrderStatus);
+  const setCommission = useServerFn(updateCommissionStatus);
+  const setPayout = useServerFn(updatePayoutStatus);
+  const setBlocked = useServerFn(setCustomerBlocked);
   const saveProduct = useServerFn(upsertProduct);
-  const listOrders = useServerFn(listAdminOrders);
-  const updateOrder = useServerFn(updateOrderStatus);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [productBusy, setProductBusy] = useState(false);
-  const [orderBusy, setOrderBusy] = useState<string | null>(null);
-  const [orderFilter, setOrderFilter] = useState<"all" | OrderStatus>("all");
-  const [orderSearch, setOrderSearch] = useState("");
-  const [productForm, setProductForm] = useState<ProductForm>(EMPTY_PRODUCT);
 
-  const partnersQuery = useQuery({ queryKey: ["admin-partners"], enabled: isAdmin, queryFn: async () => {
-    const result = await listPartners(); if (!result.ok) throw new Error(result.error); return result.partners;
-  }});
-  const productsQuery = useQuery({ queryKey: ["admin-products"], enabled: isAdmin, queryFn: async () => {
-    const result = await listProducts(); if (!result.ok) throw new Error(result.error); return result.products;
-  }});
-  const ordersQuery = useQuery({ queryKey: ["admin-orders"], enabled: isAdmin, queryFn: async () => {
-    const result = await listOrders(); if (!result.ok) throw new Error(result.error); return result.orders;
-  }});
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin-data"],
+    enabled: Boolean(isAdmin),
+    queryFn: async () => {
+      const [partners, orders, commissions, payouts, customers, settings, products, auditLogs] =
+        await Promise.all([
+          supabase.from("partners").select("*").order("created_at", { ascending: false }),
+          supabase
+            .from("orders")
+            .select("*, order_items(*)")
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("commissions")
+            .select("*, partners(partner_code), orders(order_number)")
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("payouts")
+            .select(
+              "id,partner_id,amount,method,account_holder,bank_name,status,notes,created_at,updated_at,account_number_last4,upi_id_masked,ifsc_masked, partners(partner_code)",
+            )
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("profiles")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(200),
+          supabase.from("app_settings").select("*"),
+          supabase.from("products").select("*").order("created_at", { ascending: false }),
+          supabase
+            .from("audit_logs")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(100),
+        ]);
+      return {
+        partners: partners.data ?? [],
+        orders: orders.data ?? [],
+        commissions: commissions.data ?? [],
+        payouts: payouts.data ?? [],
+        customers: customers.data ?? [],
+        settings: settings.data ?? [],
+        products: products.data ?? [],
+        auditLogs: auditLogs.data ?? [],
+      };
+    },
+  });
 
-  const filteredOrders = useMemo(() => {
-    const search = orderSearch.trim().toLowerCase();
-    return (ordersQuery.data ?? []).filter((order) => {
-      const matchesStatus = orderFilter === "all" || order.status === orderFilter;
-      const matchesSearch = !search || order.order_number.toLowerCase().includes(search) || (order.referral_code ?? "").toLowerCase().includes(search) || (order.shipping_name ?? "").toLowerCase().includes(search) || (order.mobile ?? "").includes(search);
-      return matchesStatus && matchesSearch;
+  const commissionSetting = data?.settings.find((s) => s.key === "commission")?.value as
+    Record<string, unknown> | undefined;
+  const membershipSetting = data?.settings.find((s) => s.key === "membership")?.value as
+    Record<string, unknown> | undefined;
+
+  const [form, setForm] = useState({
+    default_percent: "10",
+    min_payout: "500",
+    holding_days: "7",
+    membership_price: "199",
+  });
+
+  useEffect(() => {
+    if (!commissionSetting && !membershipSetting) return;
+    setForm({
+      default_percent: String(commissionSetting?.["default_percent"] ?? 10),
+      min_payout: String(commissionSetting?.["min_payout"] ?? 500),
+      holding_days: String(commissionSetting?.["holding_days"] ?? 7),
+      membership_price: String(membershipSetting?.["price"] ?? 199),
     });
-  }, [ordersQuery.data, orderFilter, orderSearch]);
+  }, [commissionSetting, membershipSetting]);
 
-  async function changePartnerStatus(partnerId: string, status: PartnerStatus) {
-    setBusyId(partnerId);
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ["admin-data"] });
+
+  async function run(action: Promise<{ ok: boolean; error?: string }>, message: string) {
     try {
-      const result = await updatePartner({ data: { partnerId, status } });
-      if (!result.ok) { toast.error(result.error); return; }
-      toast.success(`Partner marked ${status}.`);
-      await queryClient.invalidateQueries({ queryKey: ["admin-partners"] });
-      await queryClient.invalidateQueries({ queryKey: ["session"] });
-    } catch { toast.error("Could not update partner status."); }
-    finally { setBusyId(null); }
+      const res = await action;
+      if (!res.ok) {
+        toast.error(res.error ?? "Action failed");
+        return;
+      }
+      toast.success(message);
+      await refresh();
+    } catch {
+      toast.error("Action failed. Please try again.");
+    }
   }
 
-  async function changeOrderStatus(orderId: string, status: OrderStatus) {
-    setOrderBusy(orderId);
-    try {
-      const result = await updateOrder({ data: { orderId, status } });
-      if (!result.ok) { toast.error(result.error); return; }
-      toast.success(`Order marked ${status.replace("_", " ")}.`);
-      await queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
-    } catch { toast.error("Could not update order status."); }
-    finally { setOrderBusy(null); }
+  if (isPending) {
+    return (
+      <DashboardShell title="Admin console">
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      </DashboardShell>
+    );
   }
 
-  function editProduct(product: NonNullable<typeof productsQuery.data>[number]) {
-    setProductForm({ id: product.id, name: product.name, slug: product.slug, sku: product.sku, category: product.category,
-      short_description: product.short_description ?? "", description: product.description ?? "", image_url: product.image_url ?? "",
-      price: String(product.price), sale_price: product.sale_price == null ? "" : String(product.sale_price), stock: String(product.stock),
-      commission_percent: product.commission_percent == null ? "0" : String(product.commission_percent), featured: product.featured,
-      status: product.status as ProductForm["status"] });
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-  function setField<K extends keyof ProductForm>(key: K, value: ProductForm[K]) { setProductForm((current) => ({ ...current, [key]: value })); }
-  async function saveCurrentProduct() {
-    setProductBusy(true);
-    try {
-      const result = await saveProduct({ data: { id: productForm.id, name: productForm.name, slug: productForm.slug, sku: productForm.sku, category: productForm.category,
-        short_description: productForm.short_description || null, description: productForm.description || null, image_url: productForm.image_url || null,
-        price: Number(productForm.price), sale_price: productForm.sale_price === "" ? null : Number(productForm.sale_price), stock: Number(productForm.stock),
-        commission_percent: productForm.commission_percent === "" ? null : Number(productForm.commission_percent), featured: productForm.featured, status: productForm.status } });
-      if (!result.ok) { toast.error(result.error); return; }
-      toast.success(productForm.id ? "Product updated." : "Product created."); setProductForm(EMPTY_PRODUCT);
-      await queryClient.invalidateQueries({ queryKey: ["admin-products"] });
-    } catch { toast.error("Could not save product."); } finally { setProductBusy(false); }
+  if (!isAdmin) {
+    return (
+      <DashboardShell title="Admin console">
+        <EmptyState message="You do not have access to the admin console." />
+      </DashboardShell>
+    );
   }
 
-  return <DashboardShell title="Admin Console" subtitle={session?.email ?? ""}>
-    {!isAdmin ? <EmptyState message="You do not have permission to access the admin console." /> : <>
-      <div className="mb-4 flex justify-end">
-        <Button asChild variant="outline" size="sm"><Link to="/admin-refunds">Refund requests</Link></Button>
+  const revenue = (data?.orders ?? [])
+    .filter((o) => ["paid", "processing", "shipped", "delivered"].includes(o.status))
+    .reduce((s, o) => s + Number(o.total), 0);
+  const commissionTotal = (data?.commissions ?? [])
+    .filter((c) => c.status !== "reversed")
+    .reduce((s, c) => s + Number(c.amount), 0);
+
+  return (
+    <DashboardShell title="Admin console" subtitle="Operations, partners and platform settings">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Partners" value={data?.partners.length ?? 0} />
+        <StatCard label="Orders" value={data?.orders.length ?? 0} />
+        <StatCard label="Revenue" value={revenue} currency />
+        <StatCard label="Commission payable" value={commissionTotal} currency />
       </div>
-      <Tabs defaultValue="orders">
-      <TabsList><TabsTrigger value="orders">Orders</TabsTrigger><TabsTrigger value="partners">Partners</TabsTrigger><TabsTrigger value="products">Products</TabsTrigger></TabsList>
 
-      <TabsContent value="orders" className="mt-6 space-y-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div><h2 className="font-display text-2xl">Orders</h2><p className="mt-1 text-sm text-muted-foreground">Track payments, fulfilment, customer delivery details and commissions.</p></div>
-          <Button variant="outline" size="sm" onClick={() => void ordersQuery.refetch()} disabled={ordersQuery.isFetching}>Refresh</Button>
-        </div>
-        <div className="grid gap-3 md:grid-cols-[1fr_220px]">
-          <input aria-label="Search orders" placeholder="Search order, customer, mobile or referral…" className="rounded-md border bg-background px-3 py-2 text-sm" value={orderSearch} onChange={(e) => setOrderSearch(e.target.value)} />
-          <select aria-label="Filter orders by status" className="rounded-md border bg-background px-3 py-2 text-sm" value={orderFilter} onChange={(e) => setOrderFilter(e.target.value as "all" | OrderStatus)}>
-            <option value="all">All statuses</option>{ORDER_STATUSES.map((status) => <option key={status} value={status}>{status.replace("_", " ")}</option>)}
-          </select>
-        </div>
-        {ordersQuery.isLoading ? <p className="text-sm text-muted-foreground">Loading orders…</p> : ordersQuery.error ? <EmptyState message="Could not load orders." /> : filteredOrders.length === 0 ? <EmptyState message="No matching orders." /> :
-          <div className="space-y-3">{filteredOrders.map((order) => {
-            const items = (order.order_items ?? []) as Array<{ id: string; product_name: string; quantity: number; unit_price: number; line_total: number }>;
-            const commissions = (order.commissions ?? []) as Array<{ id: string; amount: number; status: string }>;
-            return <div key={order.id} className="rounded-xl border border-border bg-card p-5">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-3"><span className="font-medium">{order.order_number}</span><StatusPill status={order.status} /><span className="text-xs text-muted-foreground">{new Date(order.created_at).toLocaleString("en-IN")}</span></div>
-                  <div className="mt-3 grid gap-3 text-sm md:grid-cols-2 lg:grid-cols-4">
-                    <div><p className="text-xs text-muted-foreground">Customer</p><p>{order.shipping_name || "—"}</p><p className="text-xs text-muted-foreground">{order.mobile || order.customer_id}</p></div>
-                    <div><p className="text-xs text-muted-foreground">Payment</p><p>{order.payment_id || "Awaiting payment"}</p><p className="text-xs text-muted-foreground">Total ₹{Number(order.total).toLocaleString("en-IN")}</p></div>
-                    <div><p className="text-xs text-muted-foreground">Referral</p><p>{order.referral_code || "Direct"}</p><p className="text-xs text-muted-foreground">Partner {order.partner_id ? "linked" : "none"}</p></div>
-                    <div><p className="text-xs text-muted-foreground">Delivery</p><p>{order.city || "—"}{order.state ? `, ${order.state}` : ""}</p><p className="text-xs text-muted-foreground">{order.pincode || ""}</p></div>
-                  </div>
-                  <p className="mt-2 text-xs text-muted-foreground">{order.address || "No address supplied"}</p>
-                  <div className="mt-4 border-t pt-3"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Items</p><div className="mt-2 space-y-1 text-sm">{items.map((item) => <div key={item.id} className="flex justify-between gap-3"><span>{item.product_name} × {item.quantity}</span><span>₹{Number(item.line_total).toLocaleString("en-IN")}</span></div>)}</div></div>
-                  {commissions.length > 0 && <p className="mt-3 text-xs text-muted-foreground">Commission: ₹{commissions.reduce((sum, item) => sum + Number(item.amount), 0).toLocaleString("en-IN")} · {commissions.map((item) => item.status).join(", ")}</p>}
-                </div>
-                <div className="flex min-w-[190px] flex-col gap-2">
-                  <select aria-label={`Update ${order.order_number} status`} className="rounded-md border bg-background px-3 py-2 text-sm" value={order.status} disabled={orderBusy === order.id} onChange={(e) => void changeOrderStatus(order.id, e.target.value as OrderStatus)}>
-                    {ORDER_STATUSES.map((status) => <option key={status} value={status}>{status.replace("_", " ")}</option>)}
-                  </select>
-                  {orderBusy === order.id && <p className="text-xs text-muted-foreground">Updating…</p>}
-                </div>
+      <Tabs defaultValue="partners" className="mt-8">
+        <TabsList className="flex-wrap">
+          <TabsTrigger value="partners">Partners</TabsTrigger>
+          <TabsTrigger value="orders">Orders</TabsTrigger>
+          <TabsTrigger value="commissions">Commissions</TabsTrigger>
+          <TabsTrigger value="payouts">Payouts</TabsTrigger>
+          <TabsTrigger value="customers">Customers</TabsTrigger>
+          <TabsTrigger value="products">Products</TabsTrigger>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
+          <TabsTrigger value="audit">Audit log</TabsTrigger>
+        </TabsList>
+
+        {isLoading && <p className="mt-6 text-sm text-muted-foreground">Loading data…</p>}
+
+        <TabsContent value="partners" className="mt-6 space-y-3">
+          {(data?.partners ?? []).length === 0 && <EmptyState message="No partners yet." />}
+          {(data?.partners ?? []).map((p) => (
+            <Row
+              key={p.id}
+              title={`${p.partner_code} · ${p.referral_code}`}
+              meta={`Joined ${shortDate(p.created_at)}`}
+              status={p.status}
+              options={PARTNER_STATUSES}
+              onChange={(status) =>
+                run(
+                  setPartner({ data: { partnerId: p.id, status: status as "active" } }),
+                  "Partner updated",
+                )
+              }
+            />
+          ))}
+        </TabsContent>
+
+        <TabsContent value="orders" className="mt-6 space-y-3">
+          <div className="flex justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                downloadCsv(
+                  "orders.csv",
+                  (data?.orders ?? []).map((o) => ({
+                    order: o.order_number,
+                    total: o.total,
+                    status: o.status,
+                    date: o.created_at,
+                  })),
+                )
+              }
+            >
+              <Download className="mr-2 h-4 w-4" /> Export CSV
+            </Button>
+          </div>
+          {(data?.orders ?? []).length === 0 && <EmptyState message="No orders yet." />}
+          {(data?.orders ?? []).map((o) => (
+            <Row
+              key={o.id}
+              title={`${o.order_number} · ${inr(o.total)}`}
+              meta={`${o.referral_code ? `Ref ${o.referral_code} · ` : ""}${shortDate(o.created_at)}`}
+              status={o.status}
+              options={ORDER_STATUSES}
+              onChange={(status) =>
+                run(
+                  setOrder({ data: { orderId: o.id, status: status as "paid" } }),
+                  "Order updated",
+                )
+              }
+            />
+          ))}
+        </TabsContent>
+
+        <TabsContent value="commissions" className="mt-6 space-y-3">
+          {(data?.commissions ?? []).length === 0 && <EmptyState message="No commissions yet." />}
+          {(data?.commissions ?? []).map((c) => (
+            <Row
+              key={c.id}
+              title={`${inr(c.amount)} · ${c.percent}%`}
+              meta={`${c.partners?.partner_code ?? ""} · ${c.orders?.order_number ?? ""}`}
+              status={c.status}
+              options={COMMISSION_STATUSES}
+              onChange={(status) =>
+                run(
+                  setCommission({ data: { commissionId: c.id, status: status as "approved" } }),
+                  "Commission updated",
+                )
+              }
+            />
+          ))}
+        </TabsContent>
+
+        <TabsContent value="payouts" className="mt-6 space-y-3">
+          {(data?.payouts ?? []).length === 0 && <EmptyState message="No payout requests." />}
+          {(data?.payouts ?? []).map((p) => (
+            <Row
+              key={p.id}
+              title={`${inr(p.amount)} · ${p.method.toUpperCase()}`}
+              meta={`${p.partners?.partner_code ?? ""} · ${shortDate(p.created_at)} · ${
+                p.method === "upi"
+                  ? `UPI ${p.upi_id_masked ?? "—"}`
+                  : `${p.bank_name ?? "Bank"} ${p.account_number_last4 ? `••••${p.account_number_last4}` : "—"} · IFSC ${p.ifsc_masked ?? "—"}`
+              }${p.account_holder ? ` · ${p.account_holder}` : ""}`}
+              status={p.status}
+              options={PAYOUT_STATUSES}
+              onChange={(status) =>
+                run(
+                  setPayout({ data: { payoutId: p.id, status: status as "paid" } }),
+                  "Payout updated",
+                )
+              }
+            />
+          ))}
+        </TabsContent>
+
+        <TabsContent value="customers" className="mt-6 space-y-3">
+          {!isLoading && (data?.customers ?? []).length === 0 && (
+            <EmptyState message="No customers yet." />
+          )}
+          {(data?.customers ?? []).map((c) => (
+            <div
+              key={c.id}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4"
+            >
+              <div>
+                <p className="font-medium">{c.full_name || c.email || "Customer"}</p>
+                <p className="text-xs text-muted-foreground">
+                  {c.email} {c.mobile ? `· ${c.mobile}` : ""}
+                </p>
               </div>
-            </div>;
-          })}</div>}
-      </TabsContent>
+              <div className="flex items-center gap-3">
+                <StatusPill status={c.blocked ? "blocked" : "active"} />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    run(
+                      setBlocked({ data: { userId: c.id, blocked: !c.blocked } }),
+                      c.blocked ? "Customer unblocked" : "Customer blocked",
+                    )
+                  }
+                >
+                  {c.blocked ? "Unblock" : "Block"}
+                </Button>
+              </div>
+            </div>
+          ))}
+        </TabsContent>
 
-      <TabsContent value="partners" className="mt-6">
-        <div className="mb-5 flex items-center justify-between"><div><h2 className="font-display text-2xl">Partner applications</h2><p className="mt-1 text-sm text-muted-foreground">Approve pending applications to activate partner referral access.</p></div><Button variant="outline" size="sm" onClick={() => void partnersQuery.refetch()} disabled={partnersQuery.isFetching}>Refresh</Button></div>
-        {partnersQuery.isLoading ? <p className="text-sm text-muted-foreground">Loading partners…</p> : partnersQuery.error ? <EmptyState message="Could not load partner applications." /> : partnersQuery.data?.length === 0 ? <EmptyState message="No partner applications yet." /> : <div className="space-y-3">{partnersQuery.data?.map((partner) => <div key={partner.id} className="rounded-xl border border-border bg-card p-5"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-3"><span className="font-medium">{partner.partner_code}</span><StatusPill status={partner.status} /></div><p className="mt-2 text-xs text-muted-foreground">User: {partner.user_id}</p><p className="mt-1 text-xs text-muted-foreground">Referral: {partner.referral_code} · Joined {new Date(partner.joined_at).toLocaleDateString("en-IN")}</p></div><div className="flex flex-wrap gap-2">{partner.status === "pending" && <Button size="sm" onClick={() => void changePartnerStatus(partner.id, "active")} disabled={busyId === partner.id}>{busyId === partner.id ? "Updating…" : "Approve"}</Button>}{partner.status === "active" && <Button size="sm" variant="outline" onClick={() => void changePartnerStatus(partner.id, "suspended")} disabled={busyId === partner.id}>Suspend</Button>}{(partner.status === "pending" || partner.status === "suspended") && <Button size="sm" variant="destructive" onClick={() => void changePartnerStatus(partner.id, "cancelled")} disabled={busyId === partner.id}>Cancel</Button>}{partner.status === "suspended" && <Button size="sm" onClick={() => void changePartnerStatus(partner.id, "active")} disabled={busyId === partner.id}>Reactivate</Button>}</div></div></div>)}</div>}
-      </TabsContent>
+        <TabsContent value="products" className="mt-6 space-y-3">
+          <div className="flex justify-end">
+            <ProductDialog
+              key="new-product"
+              trigger={
+                <Button size="sm">
+                  <Plus className="mr-2 h-4 w-4" /> New product
+                </Button>
+              }
+              onSave={(payload) => run(saveProduct({ data: payload }), "Product saved")}
+            />
+          </div>
+          {!isLoading && (data?.products ?? []).length === 0 && (
+            <EmptyState message="No products yet. Create your first product." />
+          )}
+          {(data?.products ?? []).map((p) => (
+            <div
+              key={p.id}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4"
+            >
+              <div>
+                <p className="font-medium">{p.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {p.category} · {p.sku} · stock {p.stock} · commission{" "}
+                  {p.commission_percent ?? form.default_percent}%
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <StatusPill status={p.status} />
+                <span className="font-medium">{inr(p.sale_price ?? p.price)}</span>
+                <ProductDialog
+                  product={p}
+                  trigger={
+                    <Button size="sm" variant="outline">
+                      Edit
+                    </Button>
+                  }
+                  onSave={(payload) => run(saveProduct({ data: payload }), "Product saved")}
+                />
+              </div>
+            </div>
+          ))}
+        </TabsContent>
 
-      <TabsContent value="products" className="mt-6 space-y-6">
-        <div className="flex items-center justify-between"><div><h2 className="font-display text-2xl">Product catalogue</h2><p className="mt-1 text-sm text-muted-foreground">Manage prices, stock, commission, images and storefront visibility.</p></div><div className="flex gap-2">{productForm.id && <Button variant="outline" size="sm" onClick={() => setProductForm(EMPTY_PRODUCT)}>New product</Button>}<Button variant="outline" size="sm" onClick={() => void productsQuery.refetch()} disabled={productsQuery.isFetching}>Refresh</Button></div></div>
-        <div className="rounded-xl border border-border bg-card p-5"><h3 className="font-medium">{productForm.id ? "Edit product" : "Add product"}</h3><div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <label className="text-sm">Name<input className="mt-1 w-full rounded-md border bg-background px-3 py-2" value={productForm.name} onChange={(e) => setField("name", e.target.value)} /></label>
-          <label className="text-sm">SKU<input className="mt-1 w-full rounded-md border bg-background px-3 py-2" value={productForm.sku} onChange={(e) => setField("sku", e.target.value)} /></label>
-          <label className="text-sm">Slug<input className="mt-1 w-full rounded-md border bg-background px-3 py-2" value={productForm.slug} onChange={(e) => setField("slug", e.target.value.toLowerCase().replace(/\s+/g, "-"))} /></label>
-          <label className="text-sm">Category<input className="mt-1 w-full rounded-md border bg-background px-3 py-2" value={productForm.category} onChange={(e) => setField("category", e.target.value)} /></label>
-          <label className="text-sm">Price (₹)<input type="number" min="0" step="0.01" className="mt-1 w-full rounded-md border bg-background px-3 py-2" value={productForm.price} onChange={(e) => setField("price", e.target.value)} /></label>
-          <label className="text-sm">Sale price (₹)<input type="number" min="0" step="0.01" className="mt-1 w-full rounded-md border bg-background px-3 py-2" value={productForm.sale_price} onChange={(e) => setField("sale_price", e.target.value)} /></label>
-          <label className="text-sm">Stock<input type="number" min="0" step="1" className="mt-1 w-full rounded-md border bg-background px-3 py-2" value={productForm.stock} onChange={(e) => setField("stock", e.target.value)} /></label>
-          <label className="text-sm">Commission %<input type="number" min="0" max="100" step="0.01" className="mt-1 w-full rounded-md border bg-background px-3 py-2" value={productForm.commission_percent} onChange={(e) => setField("commission_percent", e.target.value)} /></label>
-          <label className="text-sm">Status<select className="mt-1 w-full rounded-md border bg-background px-3 py-2" value={productForm.status} onChange={(e) => setField("status", e.target.value as ProductForm["status"])}><option value="draft">Draft</option><option value="active">Active</option><option value="archived">Archived</option></select></label>
-          <label className="text-sm md:col-span-2 lg:col-span-3">Image URL<input type="url" className="mt-1 w-full rounded-md border bg-background px-3 py-2" value={productForm.image_url} onChange={(e) => setField("image_url", e.target.value)} /></label>
-          <label className="text-sm md:col-span-2 lg:col-span-3">Short description<input className="mt-1 w-full rounded-md border bg-background px-3 py-2" value={productForm.short_description} onChange={(e) => setField("short_description", e.target.value)} /></label>
-          <label className="text-sm md:col-span-2 lg:col-span-3">Description<textarea rows={4} className="mt-1 w-full rounded-md border bg-background px-3 py-2" value={productForm.description} onChange={(e) => setField("description", e.target.value)} /></label>
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={productForm.featured} onChange={(e) => setField("featured", e.target.checked)} /> Featured product</label>
-        </div><div className="mt-5 flex gap-2"><Button onClick={() => void saveCurrentProduct()} disabled={productBusy}>{productBusy ? "Saving…" : productForm.id ? "Update product" : "Create product"}</Button>{productForm.id && <Button variant="outline" onClick={() => setProductForm(EMPTY_PRODUCT)}>Cancel edit</Button>}</div></div>
-        {productsQuery.isLoading ? <p className="text-sm text-muted-foreground">Loading products…</p> : productsQuery.error ? <EmptyState message="Could not load products." /> : productsQuery.data?.length === 0 ? <EmptyState message="No products yet. Add the first product above." /> : <div className="space-y-3">{productsQuery.data?.map((product) => <div key={product.id} className="rounded-xl border border-border bg-card p-5"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div className="flex min-w-0 gap-4">{product.image_url ? <img src={product.image_url} alt="" className="h-16 w-16 rounded-lg object-cover" /> : <div className="h-16 w-16 rounded-lg border bg-muted" />}<div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="font-medium">{product.name}</span><StatusPill status={product.status} /></div><p className="mt-1 text-xs text-muted-foreground">{product.sku} · {product.category} · Stock {product.stock}</p><p className="mt-1 text-sm">₹{Number(product.sale_price ?? product.price).toLocaleString("en-IN")} {product.sale_price != null && <span className="ml-2 text-xs text-muted-foreground line-through">₹{Number(product.price).toLocaleString("en-IN")}</span>}</p><p className="mt-1 text-xs text-muted-foreground">Commission {Number(product.commission_percent ?? 0)}%{product.featured ? " · Featured" : ""}</p></div></div><Button size="sm" variant="outline" onClick={() => editProduct(product)}>Edit</Button></div></div>)}</div>}
-      </TabsContent>
-    </Tabs>
-    </>}
-  </DashboardShell>;
+        <TabsContent value="settings" className="mt-6">
+          <form
+            className="grid max-w-2xl gap-4 rounded-xl border border-border bg-card p-6 sm:grid-cols-2"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              await run(
+                saveSetting({
+                  data: {
+                    key: "commission",
+                    value: {
+                      ...(commissionSetting ?? {}),
+                      default_percent: Number(form.default_percent),
+                      min_payout: Number(form.min_payout),
+                      holding_days: Number(form.holding_days),
+                    },
+                  },
+                }),
+                "Commission settings saved",
+              );
+              await run(
+                saveSetting({
+                  data: {
+                    key: "membership",
+                    value: {
+                      ...(membershipSetting ?? {}),
+                      price: Number(form.membership_price),
+                    },
+                  },
+                }),
+                "Membership settings saved",
+              );
+            }}
+          >
+            {(
+              [
+                ["default_percent", "Default commission %"],
+                ["min_payout", "Minimum payout (₹)"],
+                ["holding_days", "Holding period (days)"],
+                ["membership_price", "Membership price (₹)"],
+              ] as const
+            ).map(([key, label]) => (
+              <div key={key} className="space-y-1.5">
+                <Label htmlFor={key}>{label}</Label>
+                <Input
+                  id={key}
+                  inputMode="decimal"
+                  value={form[key]}
+                  onChange={(e) =>
+                    setForm({ ...form, [key]: e.target.value.replace(/[^\d.]/g, "") })
+                  }
+                />
+              </div>
+            ))}
+            <Button type="submit" className="sm:col-span-2">
+              Save settings
+            </Button>
+          </form>
+        </TabsContent>
+        <TabsContent value="audit" className="mt-6 space-y-3">
+          {!isLoading && (data?.auditLogs ?? []).length === 0 && (
+            <EmptyState message="No admin activity recorded yet." />
+          )}
+          {(data?.auditLogs ?? []).map((log) => (
+            <div key={log.id} className="rounded-xl border border-border bg-card p-4">
+              <p className="text-sm font-medium">{log.action}</p>
+              <p className="text-xs text-muted-foreground">
+                {shortDate(log.created_at)}
+                {log.target ? ` · ${log.target}` : ""}
+                {log.old_value != null || log.new_value != null
+                  ? ` · ${JSON.stringify(log.old_value)} → ${JSON.stringify(log.new_value)}`
+                  : ""}
+              </p>
+            </div>
+          ))}
+        </TabsContent>
+      </Tabs>
+    </DashboardShell>
+  );
+}
+
+function Row({
+  title,
+  meta,
+  status,
+  options,
+  onChange,
+}: {
+  title: string;
+  meta: string;
+  status: string;
+  options: readonly string[];
+  onChange: (status: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4">
+      <div>
+        <p className="font-medium">{title}</p>
+        <p className="text-xs text-muted-foreground">{meta}</p>
+      </div>
+      <div className="flex items-center gap-3">
+        <StatusPill status={status} />
+        <Select value={status} onValueChange={onChange}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((o) => (
+              <SelectItem key={o} value={o} className="capitalize">
+                {o.replace(/_/g, " ")}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  );
+}
+
+type ProductRow = {
+  id: string;
+  name: string;
+  slug: string;
+  sku: string;
+  category: string;
+  short_description: string | null;
+  image_url: string | null;
+  price: number;
+  sale_price: number | null;
+  stock: number;
+  status: string;
+  featured: boolean;
+  commission_percent: number | null;
+};
+
+type ProductPayload = {
+  id?: string;
+  name: string;
+  slug: string;
+  sku: string;
+  category: string;
+  short_description?: string;
+  image_url?: string | null;
+  price: number;
+  sale_price?: number | null;
+  stock: number;
+  status: "active" | "inactive";
+  featured: boolean;
+  commission_percent?: number | null;
+};
+
+function ProductDialog({
+  product,
+  trigger,
+  onSave,
+}: {
+  product?: ProductRow;
+  trigger: React.ReactNode;
+  onSave: (payload: ProductPayload) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [f, setF] = useState({
+    name: product?.name ?? "",
+    slug: product?.slug ?? "",
+    sku: product?.sku ?? "",
+    category: product?.category ?? "attar",
+    short_description: product?.short_description ?? "",
+    image_url: product?.image_url ?? "",
+    price: String(product?.price ?? ""),
+    sale_price: product?.sale_price != null ? String(product.sale_price) : "",
+    stock: String(product?.stock ?? 0),
+    status: (product?.status === "inactive" ? "inactive" : "active") as "active" | "inactive",
+    featured: Boolean(product?.featured),
+    commission_percent:
+      product?.commission_percent != null ? String(product.commission_percent) : "",
+  });
+
+  const set = (key: keyof typeof f, value: string | boolean) =>
+    setF((p) => ({ ...p, [key]: value }));
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!f.name.trim() || !f.slug.trim() || !f.sku.trim() || !Number(f.price)) {
+      toast.error("Name, slug, SKU and a price above zero are required.");
+      return;
+    }
+    if (!/^[a-z0-9-]+$/.test(f.slug)) {
+      toast.error("Slug can only contain lowercase letters, numbers and dashes.");
+      return;
+    }
+    setBusy(true);
+    await onSave({
+      ...(product?.id ? { id: product.id } : {}),
+      name: f.name.trim(),
+      slug: f.slug.trim(),
+      sku: f.sku.trim(),
+      category: f.category.trim(),
+      ...(f.short_description.trim() ? { short_description: f.short_description.trim() } : {}),
+      image_url: f.image_url.trim() || null,
+      price: Number(f.price),
+      sale_price: f.sale_price ? Number(f.sale_price) : null,
+      stock: Number(f.stock || 0),
+      status: f.status,
+      featured: f.featured,
+      commission_percent: f.commission_percent ? Number(f.commission_percent) : null,
+    });
+    setBusy(false);
+    setOpen(false);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{product ? "Edit product" : "New product"}</DialogTitle>
+        </DialogHeader>
+        <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
+          {(
+            [
+              ["name", "Name", "sm:col-span-2"],
+              ["slug", "Slug", ""],
+              ["sku", "SKU", ""],
+              ["category", "Category", ""],
+              ["price", "Price (₹)", ""],
+              ["sale_price", "Sale price (₹)", ""],
+              ["stock", "Stock", ""],
+              ["commission_percent", "Commission % (blank = default)", ""],
+              ["image_url", "Image URL", "sm:col-span-2"],
+              ["short_description", "Short description", "sm:col-span-2"],
+            ] as const
+          ).map(([key, label, span]) => (
+            <div key={key} className={`space-y-1.5 ${span}`}>
+              <Label htmlFor={`p-${key}`}>{label}</Label>
+              <Input
+                id={`p-${key}`}
+                value={f[key] as string}
+                onChange={(e) => set(key, e.target.value)}
+              />
+            </div>
+          ))}
+          <div className="space-y-1.5">
+            <Label htmlFor="p-status">Status</Label>
+            <Select value={f.status} onValueChange={(v) => set("status", v)}>
+              <SelectTrigger id="p-status">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="p-featured">Featured</Label>
+            <Select
+              value={f.featured ? "yes" : "no"}
+              onValueChange={(v) => set("featured", v === "yes")}
+            >
+              <SelectTrigger id="p-featured">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="yes">Yes</SelectItem>
+                <SelectItem value="no">No</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button type="submit" className="sm:col-span-2" disabled={busy}>
+            {busy ? "Saving…" : "Save product"}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
 }

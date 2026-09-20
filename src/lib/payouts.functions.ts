@@ -18,10 +18,27 @@ export const getPartnerBalance = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const db = await admin();
-    const { data: partner } = await db.from("partners").select("id").eq("user_id", context.userId).maybeSingle();
+    const { data: partner } = await db
+      .from("partners")
+      .select("id")
+      .eq("user_id", context.userId)
+      .maybeSingle();
     if (!partner) return { available: 0, minPayout: 0 };
-    const settings = await getSetting<CommissionSettings>("commission", { default_percent: 10, min_payout: 500, holding_days: 7, allow_product_specific: true, allow_category_specific: true, basis: "product_subtotal", exclude_shipping: true, exclude_tax: true, exclude_discounts: true });
-    return { available: await availableBalance(partner.id), minPayout: Number(settings.min_payout) };
+    const settings = await getSetting<CommissionSettings>("commission", {
+      default_percent: 10,
+      min_payout: 500,
+      holding_days: 7,
+      allow_product_specific: true,
+      allow_category_specific: true,
+      basis: "product_subtotal",
+      exclude_shipping: true,
+      exclude_tax: true,
+      exclude_discounts: true,
+    });
+    return {
+      available: await availableBalance(partner.id),
+      minPayout: Number(settings.min_payout),
+    };
   });
 
 export const requestPayout = createServerFn({ method: "POST" })
@@ -29,19 +46,60 @@ export const requestPayout = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => payoutSchema.parse(input))
   .handler(async ({ data, context }) => {
     const db = await admin();
-    const { data: partner } = await db.from("partners").select("id,status").eq("user_id", context.userId).maybeSingle();
-    if (!partner || partner.status !== "active") return { ok: false as const, error: "Only active business partners can request a payout." };
-    const settings = await getSetting<CommissionSettings>("commission", { default_percent: 10, min_payout: 500, holding_days: 7, allow_product_specific: true, allow_category_specific: true, basis: "product_subtotal", exclude_shipping: true, exclude_tax: true, exclude_discounts: true });
+    const { data: partner } = await db
+      .from("partners")
+      .select("id,status")
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (!partner || partner.status !== "active")
+      return { ok: false as const, error: "Only active business partners can request a payout." };
+
+    const settings = await getSetting<CommissionSettings>("commission", {
+      default_percent: 10,
+      min_payout: 500,
+      holding_days: 7,
+      allow_product_specific: true,
+      allow_category_specific: true,
+      basis: "product_subtotal",
+      exclude_shipping: true,
+      exclude_tax: true,
+      exclude_discounts: true,
+    });
     const available = await availableBalance(partner.id);
-    if (data.amount < Number(settings.min_payout)) return { ok: false as const, error: `Minimum payout amount is ₹${settings.min_payout}.` };
-    if (data.amount > available) return { ok: false as const, error: `Insufficient balance. You currently have ₹${available.toFixed(2)} available.` };
-    if (data.method === "bank" && (!data.accountNumber || !data.ifsc || !data.accountHolder)) return { ok: false as const, error: "Please provide complete bank details." };
-    if (data.method === "upi" && !data.upiId) return { ok: false as const, error: "Please provide a valid UPI ID." };
-    const accountLast4 = data.accountNumber ? data.accountNumber.slice(-4) : null;
-    const maskedUpi = data.upiId ? `${data.upiId.slice(0, 2)}***${data.upiId.slice(-3)}` : null;
-    const maskedIfsc = data.ifsc ? `${data.ifsc.slice(0, 4)}***${data.ifsc.slice(-2)}` : null;
-    const { error } = await db.from("payouts").insert({ partner_id: partner.id, amount: data.amount, method: data.method, account_holder: data.accountHolder ?? null, bank_name: data.bankName ?? null, account_number: data.accountNumber ?? null, ifsc: data.ifsc ?? null, upi_id: data.upiId ?? null, account_number_last4: accountLast4, upi_id_masked: maskedUpi, ifsc_masked: maskedIfsc, status: "requested" });
+    if (data.amount < Number(settings.min_payout))
+      return {
+        ok: false as const,
+        error: `Minimum payout amount is ₹${settings.min_payout}.`,
+      };
+    if (data.amount > available)
+      return {
+        ok: false as const,
+        error: `Insufficient balance. You currently have ₹${available.toFixed(2)} available.`,
+      };
+    if (data.method === "bank" && (!data.accountNumber || !data.ifsc || !data.accountHolder))
+      return { ok: false as const, error: "Please provide complete bank details." };
+    if (data.method === "upi" && !data.upiId)
+      return { ok: false as const, error: "Please provide a valid UPI ID." };
+
+    // The database re-validates eligibility, clamps the amount to the live
+    // balance and forces the initial status — the browser value is never trusted.
+    const { error } = await db.from("payouts").insert({
+      partner_id: partner.id,
+      amount: data.amount,
+      method: data.method,
+      account_holder: data.accountHolder ?? null,
+      bank_name: data.bankName ?? null,
+      account_number: data.accountNumber ?? null,
+      ifsc: data.ifsc ?? null,
+      upi_id: data.upiId ?? null,
+      status: "requested",
+    });
     if (error) return { ok: false as const, error: error.message };
-    await notify(context.userId, "Payout requested", `Your payout request of ₹${data.amount.toFixed(2)} is under review.`, "payout");
+    await notify(
+      context.userId,
+      "Payout requested",
+      `Your payout request of ₹${data.amount.toFixed(2)} is under review.`,
+      "payout",
+    );
     return { ok: true as const };
   });

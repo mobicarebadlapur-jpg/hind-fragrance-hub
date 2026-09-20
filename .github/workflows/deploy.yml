@@ -41,6 +41,7 @@ jobs:
           test -d .output/public
           test ! -e .output/.output
           grep -q '"preset": "node-server"' .output/nitro.json
+          # A real TanStack Start artifact is multi-MB; an empty Nitro shell is <200kB.
           size=$(du -sk .output/server | cut -f1)
           echo "[CI] .output/server size: ${size}kB"
           test "$size" -gt 500
@@ -66,12 +67,16 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+          # Keep only the production Passenger entrypoint and Nitro standalone output.
           rm -rf /tmp/hostinger-deploy
           mkdir -p /tmp/hostinger-deploy
           cp -a .output /tmp/hostinger-deploy/.output
           cp app.js /tmp/hostinger-deploy/app.js
           cp package.json /tmp/hostinger-deploy/package.json
 
+          # The Nitro node-server artifact is fully self-contained (.output/server
+          # ships its own node_modules), so the deploy package.json carries NO
+          # dependencies. Hostinger's "npm run build" only validates the artifact.
           cat > /tmp/hostinger-deploy/package.json <<'PKGJSON'
           {
             "name": "hind-fragrance-hub-deploy",
@@ -107,14 +112,10 @@ jobs:
           console.log("[Hostinger] Artifact built from source commit: " + sourceSha);
           PKGVALIDATE
 
-          # Do not switch the working tree to deploy. The checkout contains generated
-          # files such as routeTree.gen.ts that are modified by the build. Publish the
-          # prepared artifact using a temporary git worktree instead.
-          rm -rf /tmp/hostinger-publish
-          git worktree add --detach /tmp/hostinger-publish HEAD
-          cd /tmp/hostinger-publish
-          git switch --orphan deploy-publish
+          # Publish an orphan branch so main remains clean and .output stays ignored there.
+          git switch --orphan deploy
           git rm -rf . >/dev/null 2>&1 || true
+          # Remove ignored build output left by the checkout before copying the artifact.
           rm -rf .output app.js package.json validate-artifact.mjs
           cp -a /tmp/hostinger-deploy/.output .output
           cp /tmp/hostinger-deploy/app.js app.js
@@ -123,9 +124,7 @@ jobs:
 
           git add -f .output app.js package.json validate-artifact.mjs
           git commit -m "deploy: build production artifact from ${GITHUB_SHA}"
-          git push origin HEAD:deploy --force
-          cd - >/dev/null
-          git worktree remove --force /tmp/hostinger-publish
+          git push origin deploy --force
 
       - name: Deployment instructions
         run: |
