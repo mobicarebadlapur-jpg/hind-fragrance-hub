@@ -57,6 +57,23 @@ export async function isAdmin(userId: string): Promise<boolean> {
   return Boolean(data);
 }
 
+/**
+ * Demo/mock payments must never let an ordinary customer create a paid order
+ * or a partner membership for free. While the real gateway is not live, the
+ * simulated success path is restricted to admin/test accounts.
+ */
+export async function demoPaymentAllowed(userId: string): Promise<boolean> {
+  const payment = await getSetting<{ provider: string; demo_mode: boolean }>("payment", {
+    provider: "razorpay",
+    demo_mode: false,
+  });
+  if (!payment.demo_mode) return false;
+  return isAdmin(userId);
+}
+
+export const PAYMENTS_NOT_LIVE_MESSAGE =
+  "Online payments are not active yet. Please contact us to complete this order.";
+
 export async function audit(
   adminId: string,
   action: string,
