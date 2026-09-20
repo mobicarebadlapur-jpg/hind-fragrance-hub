@@ -1,8 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { admin, getSetting, notify } from "./platform.server";
-import type { PaymentSettings } from "./platform.server";
+import {
+  admin,
+  notify,
+  demoPaymentAllowed,
+  PAYMENTS_NOT_LIVE_MESSAGE,
+} from "./platform.server";
 
 const checkoutSchema = z.object({
   items: z
@@ -117,15 +121,10 @@ export const payForOrder = createServerFn({ method: "POST" })
     if (order.status !== "payment_pending" && order.status !== "created")
       return { ok: false as const, error: "This order has already been paid." };
 
-    const payment = await getSetting<PaymentSettings>("payment", {
-      provider: "razorpay",
-      demo_mode: false,
-    });
-    if (!payment.demo_mode) {
-      return {
-        ok: false as const,
-        error: "Payment gateway is not configured yet. Please try again after payment setup is completed.",
-      };
+    // Simulated payments are restricted to admin/test accounts while the real
+    // gateway is not live; ordinary customers cannot create a paid order for free.
+    if (!(await demoPaymentAllowed(context.userId))) {
+      return { ok: false as const, error: PAYMENTS_NOT_LIVE_MESSAGE };
     }
 
     const paymentId = `pay_${crypto.randomUUID().replace(/-/g, "").slice(0, 18)}`;
